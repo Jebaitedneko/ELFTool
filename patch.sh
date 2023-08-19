@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PFX=aarch64-linux-gnu-
-# PFX=
+PFX=
 
 # Prepare Target Binary
 cat << EOF > target.c
@@ -181,6 +181,25 @@ done
 #     ${PFX}objcopy --change-section-address ${SECTIONS[$i]}=${ADDR_NEW[$i]} target target_patch && mv target_patch target
 #     i=$((i+1))
 # done
+
+SECTION_HDR_START=$(readelf -h target | grep -E "Start of section headers"  | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+SECTION_HDR_WIDTH=$(readelf -h target | grep -E "Size of section headers"   | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+SECTION_HDR_COUNT=$(readelf -h target | grep -E "Number of section headers" | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+xxd -g0 -s $SECTION_HDR_START -l $(($SECTION_HDR_COUNT*$SECTION_HDR_WIDTH)) target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > target.hex
+
+i=0
+while [ $i -lt $S_CNT ]; do
+    # patch section header address, set VMA=LMA
+    S_OLD_ADDR=$(echo ${ADDR_OLD[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
+    S_NEW_ADDR=$(echo ${ADDR_NEW[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
+    SH_OLD_HEX=$(echo "${S_OLD_ADDR}000000000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    SH_NEW_HEX=$(echo "${S_NEW_ADDR}000000000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    cat target.hex | grep -oE "${S_OLD_ADDR}000000000000${S_NEW_ADDR}"
+    sed -i "s|$SH_OLD_HEX|$SH_NEW_HEX|g" target
+    i=$((i+1))
+done
+
+rm target.hex
 
 # Dump ELF data of final file and diff
 ${PFX}readelf -a target > re-target_pst.txt
