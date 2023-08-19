@@ -1,72 +1,98 @@
 PFX=aarch64-linux-gnu-
 PFX=
 
-${PFX}gcc modelf.c -o modelf
-
+# Prepare Target Binary
 cat << EOF > target.c
 #include <stdio.h>
 int main(){int a=0;asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");printf("%d\n",a);return 0;}
 EOF
-# cat << EOF > target.c
-# #include <stdio.h>
-# int main(){return 1;}
-# EOF
-${PFX}gcc target.c -o target -g -Wall
+${PFX}gcc target.c -o target -g -Wall && rm target.c
 
+# Dump .text section from Target
+${PFX}objcopy --dump-section .text=target.text target
+TARGET_TEXT_SZ_ORIG=$(printf %x $(stat -c '%s' target.text) | sed 's/^0*//;s/^/0x/')
+echo "==== TARGET_TEXT_SZ_ORIG: $TARGET_TEXT_SZ_ORIG ===="
+
+# Dump ELF data from Target
+${PFX}readelf -a target > re-target_pre.txt
+
+# Prepare Patch Code
 cat << EOF > patch.S
-.text
-.global __patch
+.section .text
+.globl __patch
+.type __patch, @function
 __patch:
-    nop
+    push   %rbp
+    mov    %rsp,%rbp
+    xor    %eax, %eax
+    inc    %eax
+    pop    %rbp
+    ret
+.size __patch, .-__patch
 EOF
-# cat << EOF > patch.S
-# .text
-# .global __patch
-# __patch:
-#     push   %rbp
-#     mov    %rsp,%rbp
-#     pop    %rbp
-#     ret
-# EOF
-${PFX}as patch.S -o patch.o
-${PFX}objcopy --dump-section .text=patch.text patch.o
-${PFX}objcopy --add-section .patch=patch.text --set-section-flags .patch=code,readonly,alloc target patched
-${PFX}readelf -a target > readelf-target-premodelf.txt
-${PFX}readelf -a patched > readelf-patched-premodelf.txt
+${PFX}as -c patch.S -o patch.o && rm patch.S
 
-TARGET_ADDR=$(${PFX}readelf -a target | grep -E "\[.*\] .note.gnu.b" | grep -oE "[0-9a-f]{8}$"  | sed 's/^0*//;s/^/0x/' | tr -d '\n')
-if [[ $TARGET_ADDR -gt 0 ]]; then
-    echo ".note.gnu.build-id FOUND"
-else
-    TARGET_ADDR=$(${PFX}readelf -a target | grep -E "\[.*\] .note" | grep -oE "[0-9a-f]{8}$"  | sed 's/^0*//;s/^/0x/' | tr -d '\n')
-fi
+# Dump ELF data from Patch
+${PFX}readelf -a patch.o > re-patch.txt
 
-PATCHSZ=$(stat -c '%s' patch.text)
-PATCH_SECTION=$(${PFX}readelf -a patched | grep patch | grep -oE "\[.*\]" | sed "s/\[//g;s/\]//g" | tr -d '\n')
+# Print .text section from Patch
+echo "==== patch.o objdump start ===="
+${PFX}objdump -d patch.o
+echo "==== patch.o objdump end ===="
 
-NOTES_SEGMENT=$(${PFX}readelf -a patched | grep -E "[0-9a-f]{2}[[:space:]]*.note.gnu.b" | sed "s/.*\([0-9][0-9]\)\(.*\)/\1/g" | sed 's/^0*//' | tr -d '\n' )
-if [[ $NOTES_SEGMENT -gt 0 ]]; then
-    echo ".note.gnu.build-id FOUND"
-else
-    NOTES_SEGMENT=$(${PFX}readelf -a patched | grep -E "[0-9a-f]{2}[[:space:]]*.note" | sed "s/.*\([0-9][0-9]\)\(.*\)/\1/g" | tr -d '\n')
-fi
+# Dump .text section from Patch
+${PFX}objcopy --dump-section .text=patch.text patch.o && rm patch.o
+PATCH_TEXT_SZ=$(printf %x $(stat -c '%s' patch.text) | sed 's/^0*//;s/^/0x/')
+echo "==== PATCH_TEXT_SZ: $PATCH_TEXT_SZ ===="
 
-echo -e "TARGET_ADDR: $TARGET_ADDR\nPATCHSZ: $PATCHSZ\nPATCH_SECTION: $PATCH_SECTION\nNOTES_SEGMENT: $NOTES_SEGMENT"
+# Merge .text section from Patch into Target
+cat patch.text >> target.text && rm patch.text
+TARGET_TEXT_SZ_PATCHED=0x$(printf %x $(stat -c '%s' target.text))
+echo "==== TARGET_TEXT_SZ_PATCHED: $TARGET_TEXT_SZ_PATCHED ===="
 
-./modelf patched --section $PATCH_SECTION --addr $TARGET_ADDR
-mv modelf-out.elf patched
-./modelf patched --segment $NOTES_SEGMENT --type 1 --align 1 --flags 0x6 # --offset $TARGET_ADDR --vaddr $TARGET_ADDR --paddr $TARGET_ADDR --filesz $PATCHSZ --memsz $PATCHSZ
-# .rodata,alloc,load,readonly,data,contents
-mv modelf-out.elf patched
-${PFX}readelf -a patched > readelf-patched-pstmodelf.txt
-# diff -ur readelf-patched-premodelf.txt readelf-patched-pstmodelf.txt
-diff -ur readelf-target-premodelf.txt readelf-patched-pstmodelf.txt
-chmod +x patched
+# Compute address of section after .text (this will get resized)
+S_ADDR=$(${PFX}readelf -a target | grep ".text  " -A3 | tail -n2 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 5p | tr -d '\n' | sed 's/^0*//' | tac -rs .. | echo "$(tr -d '\n')")
 
-# clear
-# ${PFX}readelf -a target > readelf-target-premodelf.txt
-# ${PFX}objcopy --update-section .note.gnu.build-id=patch.text --set-section-flags .note.gnu.build-id=code,readonly,alloc target patched
-# ./modelf patched --segment 8 --type 1
-# mv modelf-out.elf patched
-# ${PFX}readelf -a patched > readelf-patched-pstmodelf.txt
-# diff -ur readelf-target-premodelf.txt readelf-patched-pstmodelf.txt
+# Compute .dynamic section address and offset
+DYN_ADDR=$(${PFX}readelf -a target | grep ".dynamic  " -A1 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 5p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+DYN_SIZE=$(${PFX}readelf -a target | grep ".dynamic  " -A1 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+DYN_OLDHX=$(xxd -s $(printf %d $DYN_ADDR) -l $(printf %d $DYN_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE ".{,4}$S_ADDR.{,4}")
+
+# Compute .symtab section address and offset
+SYM_ADDR=$(${PFX}readelf -a target | grep ".symtab  " -A1 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 5p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+SYM_SIZE=$(${PFX}readelf -a target | grep ".symtab  " -A1 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+SYM_OLDHX=$(xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE ".{,4}$S_ADDR.{,4}")
+
+# Patch .dynamic and .symtab sections of section following .text
+function patch_symtab_and_dynamic_sections() {
+    DYN_PATCH=$(echo $DYN_OLDHX | sed "s/$S_ADDR/$1/g")
+    DYN_NEWHX=$(echo $DYN_PATCH | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    DYN_OLDHX=$(echo $DYN_OLDHX | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    echo "DYN_PATCH: $DYN_OLDHX|$DYN_NEWHX"
+    sed -i "s|$DYN_OLDHX|$DYN_NEWHX|g" target
+
+    SYM_PATCH=$(echo $SYM_OLDHX | sed "s/$S_ADDR/$1/g")
+    SYM_NEWHX=$(echo $SYM_PATCH | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    SYM_OLDHX=$(echo $SYM_OLDHX | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    echo "SYM_PATCH: $SYM_OLDHX|$SYM_NEWHX"
+    sed -i "s|$SYM_OLDHX|$SYM_NEWHX|g" target
+}
+
+# Update .text section with new .text data
+${PFX}objcopy --update-section .text=target.text target target_patch &> objcopy-out.txt && mv target_patch target && rm target.text
+
+# Compute the new addr of section after .text and patch it's symtab and dynamic addresses
+S_NEW_ADDR=$(cat objcopy-out.txt | grep -oE "0x[0-9a-f]+$" | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
+patch_symtab_and_dynamic_sections $S_NEW_ADDR && rm objcopy-out.txt
+
+# Add our new function in Patch to the symtab
+${PFX}objcopy --add-symbol __patch=".text:${TARGET_TEXT_SZ_ORIG},global,function" target target_patch && mv target_patch target
+
+# Dump ELF data of final file and diff
+${PFX}readelf -a target > re-target_pst.txt
+diff -ur re-target_pre.txt re-target_pst.txt
+
+# Print obj data of final file
+echo "==== target objdump start ===="
+${PFX}objdump -d target
+echo "==== target objdump end ===="
