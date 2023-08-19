@@ -99,7 +99,7 @@ function patch_symtab_and_dynamic_sections() {
 
     echo "ADDR SHIFT: $1 -> $2 (LE)"
 
-    DYN_OLDHX=$(xxd -s $(printf %d $DYN_ADDR) -l $(printf %d $DYN_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE ".{,4}$1.{,4}")
+    DYN_OLDHX=$(xxd -s $(printf %d $DYN_ADDR) -l $(printf %d $DYN_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE ".{,16}$1.{,4}")
     if [ ${#DYN_OLDHX} -gt 2 ]; then
         DYN_PATCH=$(echo $DYN_OLDHX | sed "s/$1/$2/g")
         DYN_NEWHX=$(echo $DYN_PATCH | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
@@ -108,7 +108,7 @@ function patch_symtab_and_dynamic_sections() {
         sed -i "s|$DYN_OLDHX|$DYN_NEWHX|g" target
     fi
 
-    SYM_OLDHX=$(xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE ".{,4}$1.{,4}")
+    SYM_OLDHX=$(xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_ADDR) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE [0-9a-f]{48} | grep -E "^00000000" | grep -oE ".{,16}$1.{,4}")
     SYM_PATCH=$(echo $SYM_OLDHX | sed "s/$1/$2/g")
     SYM_NEWHX=$(echo $SYM_PATCH | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
     SYM_OLDHX=$(echo $SYM_OLDHX | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
@@ -120,6 +120,9 @@ function patch_symtab_and_dynamic_sections() {
 # Update .text section with new .text data
 ${PFX}objcopy --update-section .text=target.text target target_patch && mv target_patch target && rm target.text
 
+# Add our new function in Patch to the symtab
+${PFX}objcopy --add-symbol __patch=".text:${TARGET_TEXT_SZ_ORIG},global,function" target target_patch && mv target_patch target
+
 i=0
 while [ $i -lt $S_CNT ]; do
     # Compute the new addr of section after .text and patch it's symtab and dynamic addresses
@@ -128,9 +131,6 @@ while [ $i -lt $S_CNT ]; do
     patch_symtab_and_dynamic_sections $S_OLD_ADDR $S_NEW_ADDR
     i=$((i+1))
 done
-
-# Add our new function in Patch to the symtab
-${PFX}objcopy --add-symbol __patch=".text:${TARGET_TEXT_SZ_ORIG},global,function" target target_patch && mv target_patch target
 
 # Dump ELF data of final file and diff
 ${PFX}readelf -a target > re-target_pst.txt
