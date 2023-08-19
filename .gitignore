@@ -6,3 +6,5 @@ target.text
 patch.S
 patch.o
 patch.text
+dyn.hex
+sym.hex
