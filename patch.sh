@@ -52,6 +52,7 @@ echo "==== TARGET_TEXT_SZ_PATCHED: $TARGET_TEXT_SZ_PATCHED ===="
 
 # Compute address of section after .text (this will get resized)
 S_ADDR=$(${PFX}readelf -a target | grep ".text  " -A3 | tail -n2 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 5p | tr -d '\n' | sed 's/^0*//' | tac -rs .. | echo "$(tr -d '\n')")
+S_ADDR_BE=$(${PFX}readelf -a target | grep ".text  " -A3 | tail -n2 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 5p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
 
 # Compute .dynamic section address and offset
 DYN_ADDR=$(${PFX}readelf -a target | grep ".dynamic  " -A1 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 5p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
@@ -79,11 +80,10 @@ function patch_symtab_and_dynamic_sections() {
 }
 
 # Update .text section with new .text data
-${PFX}objcopy --update-section .text=target.text target target_patch &> objcopy-out.txt && mv target_patch target && rm target.text
+${PFX}objcopy --update-section .text=target.text target target_patch && mv target_patch target && rm target.text
 
 # Compute the new addr of section after .text and patch it's symtab and dynamic addresses
-S_NEW_ADDR=$(cat objcopy-out.txt | grep -oE "0x[0-9a-f]+$" | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
-patch_symtab_and_dynamic_sections $S_NEW_ADDR && rm objcopy-out.txt
+patch_symtab_and_dynamic_sections $(printf %x $(($S_ADDR_BE+$PATCH_TEXT_SZ)) | tac -rs .. | echo "$(tr -d '\n')")
 
 # Add our new function in Patch to the symtab
 ${PFX}objcopy --add-symbol __patch=".text:${TARGET_TEXT_SZ_ORIG},global,function" target target_patch && mv target_patch target
