@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PFX=aarch64-linux-gnu-
-PFX=
+# PFX=
 
 # Prepare Target Binary
 cat << EOF > target.c
@@ -110,10 +110,35 @@ SYM_ADDR=$(${PFX}readelf -a target | grep ".symtab  " -A1 | tr -d '\n' | sed "s/
 SYM_SIZE=$(${PFX}readelf -a target | grep ".symtab  " -A1 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
 xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > sym.hex
 
+SECTION_IDS=()
+for section in ${SECTIONS[@]}; do
+    PATCH_SECTION=$(${PFX}readelf -a target | grep "${section/^\\./}  " | grep -oE "\[.*\]" | sed "s/\[//g;s/\]//g" | tr -d '\n')
+    SECTION_IDS+=( $PATCH_SECTION )
+done
+
+xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_ADDR) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE [0-9a-f]{48} > sym.hex
+
+SYMTAB_ENTRIES=()
+SECTION_IDS_HEXES=()
+for id in ${SECTION_IDS[@]}; do
+    SYMTAB_ENTRY=$(xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_ADDR) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE [0-9a-f]{48} | sed -n "$((id+1))p")
+    SYMTAB_ENTRIES+=( $SYMTAB_ENTRY )
+    SECTION_IDS_HEX=$(printf %x $id)
+    if [ $((${#SECTION_IDS_HEX}%2)) -ne 0 ]; then
+        SECTION_IDS_HEX=$( echo $SECTION_IDS_HEX | sed "s/^/0/g" )
+    fi
+    if [ ${#SECTION_IDS_HEX} -le 2 ]; then
+        SECTION_IDS_HEX=$( echo $SECTION_IDS_HEX | sed "s/^/00/g" )
+    fi
+    SECTION_IDS_HEXES+=( $(echo $SECTION_IDS_HEX | tac -rs .. | echo "$(tr -d '\n')") )
+    echo "$id ($SECTION_IDS_HEX): $SYMTAB_ENTRY"
+done
+echo ${SECTION_IDS_HEXES[@]}
+
 # Patch .dynamic and .symtab sections of section following .text
 function patch_symtab_and_dynamic_sections() {
 
-    echo "ADDR SHIFT: $1 -> $2 (LE)"
+    echo "ADDR SHIFT: $1 (LE) -> $2 (LE) SECTION ID: $3 (LE)"
 
     DYN_OLDHX=$(xxd -s $(printf %d $DYN_ADDR) -l $(printf %d $DYN_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE ".{,16}$1.{,4}")
     if [ ${#DYN_OLDHX} -gt 2 ]; then
@@ -124,8 +149,10 @@ function patch_symtab_and_dynamic_sections() {
         sed -i "s|$DYN_OLDHX|$DYN_NEWHX|g" target
     fi
 
-    SYM_OLDHX=$(xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_ADDR) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE [0-9a-f]{48} | grep -E "^00000000" | grep -oE ".{,16}$1.{,4}")
+    SYM_OLDHX=$(xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_ADDR) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" | grep -oE ".{,8}${5}${4}${3}${1}.{,16}")
     SYM_PATCH=$(echo $SYM_OLDHX | sed "s/$1/$2/g")
+    echo "SYM_OLDHX: $SYM_OLDHX"
+    echo "SYM_PATCH: $SYM_PATCH"
     SYM_NEWHX=$(echo $SYM_PATCH | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
     SYM_OLDHX=$(echo $SYM_OLDHX | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
     echo "SYM_PATCH: $SYM_OLDHX|$SYM_NEWHX"
@@ -144,7 +171,8 @@ while [ $i -lt $S_CNT ]; do
     # Compute the new addr of section after .text and patch it's symtab and dynamic addresses
     S_OLD_ADDR=$(echo ${ADDR_OLD[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
     S_NEW_ADDR=$(echo ${ADDR_NEW[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
-    patch_symtab_and_dynamic_sections $S_OLD_ADDR $S_NEW_ADDR
+    patch_symtab_and_dynamic_sections $S_OLD_ADDR $S_NEW_ADDR ${SECTION_IDS_HEXES[$i]} "00" "03" # LOCAL  DEFAULT
+    patch_symtab_and_dynamic_sections $S_OLD_ADDR $S_NEW_ADDR ${SECTION_IDS_HEXES[$i]} "02" "12" # GLOBAL HIDDEN
     i=$((i+1))
 done
 
