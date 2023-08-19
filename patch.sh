@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PFX=aarch64-linux-gnu-
-# PFX=
+PFX=
 
 # Prepare Target Binary
 cat << EOF > target.c
@@ -18,6 +18,7 @@ echo "==== TARGET_TEXT_SZ_ORIG: $TARGET_TEXT_SZ_ORIG ===="
 # Dump ELF data from Target
 ${PFX}readelf -a target > re-target_pre.txt
 
+if [ ${#PFX} -gt 1 ]; then
 # Prepare Patch Code
 cat << EOF > patch.S
 .section .text
@@ -32,6 +33,21 @@ __patch:
     ret
 .size __patch, .-__patch
 EOF
+else
+cat << EOF > patch.S
+.section .text
+.globl __patch
+.type __patch, @function
+__patch:
+    push   %rbp
+    mov    %rsp,%rbp
+    xor    %eax, %eax
+    inc    %eax
+    pop    %rbp
+    ret
+.size __patch, .-__patch
+EOF
+fi
 ${PFX}as -c patch.S -o patch.o && rm patch.S
 
 # Dump ELF data from Patch
@@ -131,6 +147,12 @@ while [ $i -lt $S_CNT ]; do
     patch_symtab_and_dynamic_sections $S_OLD_ADDR $S_NEW_ADDR
     i=$((i+1))
 done
+
+# i=0
+# while [ $i -lt $S_CNT ]; do
+#     ${PFX}objcopy --change-section-address ${SECTIONS[$i]}=${ADDR_NEW[$i]} target target_patch && mv target_patch target
+#     i=$((i+1))
+# done
 
 # Dump ELF data of final file and diff
 ${PFX}readelf -a target > re-target_pst.txt
