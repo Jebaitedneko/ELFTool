@@ -20,7 +20,19 @@ fi
 
 # Dump .text section from Target
 ${PFX}objcopy --dump-section .text=target.text target
-TARGET_TEXT_SZ_ORIG=$(printf %x $(stat -c '%s' target.text) | sed 's/^0*//;s/^/0x/')
+TARGET_TEXT_SZ_ORIG=$(printf %x $(stat -c '%s' target.text))
+if [ $((${#TARGET_TEXT_SZ_ORIG}%2)) -ne 0 ]; then
+    TARGET_TEXT_SZ_ORIG=$( echo $TARGET_TEXT_SZ_ORIG | sed "s/^/0/g" )
+fi
+if [ ${#TARGET_TEXT_SZ_ORIG} -le 2 ]; then
+    TARGET_TEXT_SZ_ORIG=$( echo $TARGET_TEXT_SZ_ORIG | sed "s/^/00/g" )
+fi
+if [ ${#TARGET_TEXT_SZ_ORIG} -le 4 ]; then
+    TARGET_TEXT_SZ_ORIG=$( echo $TARGET_TEXT_SZ_ORIG | sed "s/^/00/g" )
+fi
+if [ ${#TARGET_TEXT_SZ_ORIG} -le 6 ]; then
+    TARGET_TEXT_SZ_ORIG=$( echo $TARGET_TEXT_SZ_ORIG | sed "s/^/00/g" )
+fi
 echo "-------------------------------------------------------"
 echo "| TARGET_TEXT_SZ_ORIG: $TARGET_TEXT_SZ_ORIG"
 
@@ -75,25 +87,61 @@ ${PFX}objdump -d patch.o > od-patch.txt
 
 # Dump .text section from Patch
 ${PFX}objcopy --dump-section .text=patch.text patch.o && rm patch.o
-PATCH_TEXT_SZ=$(printf %x $(stat -c '%s' patch.text) | sed 's/^0*//;s/^/0x/')
+PATCH_TEXT_SZ=$(printf %x $(stat -c '%s' patch.text))
+if [ $((${#PATCH_TEXT_SZ}%2)) -ne 0 ]; then
+    PATCH_TEXT_SZ=$( echo $PATCH_TEXT_SZ | sed "s/^/0/g" )
+fi
+if [ ${#PATCH_TEXT_SZ} -le 2 ]; then
+    PATCH_TEXT_SZ=$( echo $PATCH_TEXT_SZ | sed "s/^/00/g" )
+fi
+if [ ${#PATCH_TEXT_SZ} -le 4 ]; then
+    PATCH_TEXT_SZ=$( echo $PATCH_TEXT_SZ | sed "s/^/00/g" )
+fi
+if [ ${#PATCH_TEXT_SZ} -le 6 ]; then
+    PATCH_TEXT_SZ=$( echo $PATCH_TEXT_SZ | sed "s/^/00/g" )
+fi
 echo "| PATCH_TEXT_SZ: $PATCH_TEXT_SZ"
 
 # Merge .text section from Patch into Target
 cat patch.text >> target.text && rm patch.text
-TARGET_TEXT_SZ_PATCHED=0x$(printf %x $(stat -c '%s' target.text))
+TARGET_TEXT_SZ_PATCHED=$(printf %x $(stat -c '%s' target.text))
+if [ $((${#TARGET_TEXT_SZ_PATCHED}%2)) -ne 0 ]; then
+    TARGET_TEXT_SZ_PATCHED=$( echo $TARGET_TEXT_SZ_PATCHED | sed "s/^/0/g" )
+fi
+if [ ${#TARGET_TEXT_SZ_PATCHED} -le 2 ]; then
+    TARGET_TEXT_SZ_PATCHED=$( echo $TARGET_TEXT_SZ_PATCHED | sed "s/^/00/g" )
+fi
+if [ ${#TARGET_TEXT_SZ_PATCHED} -le 4 ]; then
+    TARGET_TEXT_SZ_PATCHED=$( echo $TARGET_TEXT_SZ_PATCHED | sed "s/^/00/g" )
+fi
+if [ ${#TARGET_TEXT_SZ_PATCHED} -le 6 ]; then
+    TARGET_TEXT_SZ_PATCHED=$( echo $TARGET_TEXT_SZ_PATCHED | sed "s/^/00/g" )
+fi
 echo "| TARGET_TEXT_SZ_PATCHED: $TARGET_TEXT_SZ_PATCHED"
 echo "-------------------------------------------------------"
 echo
 
 if [[ ${PFX} =~ "llvm" ]]; then
     TXT_ADDR=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n')
+    if [ $((${#TXT_ADDR}%2)) -ne 0 ]; then
+        TXT_ADDR=$( echo $TXT_ADDR | sed "s/^/0/g" )
+    fi
+    if [ ${#TXT_ADDR} -le 2 ]; then
+        TXT_ADDR=$( echo $TXT_ADDR | sed "s/^/00/g" )
+    fi
+    if [ ${#TXT_ADDR} -le 4 ]; then
+        TXT_ADDR=$( echo $TXT_ADDR | sed "s/^/00/g" )
+    fi
+    if [ ${#TXT_ADDR} -le 6 ]; then
+        TXT_ADDR=$( echo $TXT_ADDR | sed "s/^/00/g" )
+    fi
     TXT_ADDR_LE=$(echo $TXT_ADDR | tac -rs .. | echo "$(tr -d '\n')")
     echo "TXT_ADDR: $TXT_ADDR"
     echo "TXT_ADDR_LE: $TXT_ADDR_LE"
     echo
-    TARGET_TEXT_SZ_ORIG_LE=$(echo "${TARGET_TEXT_SZ_ORIG}" | sed "s/^0x//g;s/^/0/g" | tac -rs .. | echo "$(tr -d '\n')")
+    TARGET_TEXT_SZ_ORIG_LE=$(echo "${TARGET_TEXT_SZ_ORIG}" | tac -rs .. | echo "$(tr -d '\n')")
     echo "TARGET_TEXT_SZ_ORIG_LE: $TARGET_TEXT_SZ_ORIG_LE"
-    TARGET_TEXT_SZ_PATCHED_LE=$(echo "${TARGET_TEXT_SZ_PATCHED}" | sed "s/^0x//g;s/^/0/g" | tac -rs .. | echo "$(tr -d '\n')")
+    TARGET_TEXT_SZ_PATCHED_LE=$(echo "${TARGET_TEXT_SZ_PATCHED}" | tac -rs .. | echo "$(tr -d '\n')")
     echo "TARGET_TEXT_SZ_PATCHED_LE: $TARGET_TEXT_SZ_PATCHED_LE"
     echo
     # 00b002 0000000000 00b002 0000000000 f80005
@@ -130,18 +178,42 @@ while [ $i -lt $S_CNT ]; do
 
     SECTIONS+=( $(echo -e "$S_DATA" | head -n $((3*$i)) | tail -n3 | head -n1 | tail -n1) )
 
-    ADDR_OLD_TMP=$(echo -e "$S_DATA" | head -n $((3*$i)) | tail -n3 | head -n2 | tail -n1)
-    ADDR_OLD_TMP_SZ=$(echo $ADDR_OLD_TMP | tr -d '\n' | wc -c)
-    if [ $(($ADDR_OLD_TMP_SZ%2)) -ne 0 ]; then
-        ADDR_OLD_TMP=$( echo $ADDR_OLD_TMP | sed "s/0x/0x0/g" )
+    ADDR_OLD_TMP=$(echo -e "$S_DATA" | head -n $((3*$i)) | tail -n3 | head -n2 | tail -n1 | sed "s/^0x//g")
+    if [ $((${#ADDR_OLD_TMP}%2)) -ne 0 ]; then
+        ADDR_OLD_TMP=$( echo $ADDR_OLD_TMP | sed "s/^/0/g" )
     fi
+    if [ ${#ADDR_OLD_TMP} -le 2 ]; then
+        ADDR_OLD_TMP=$( echo $ADDR_OLD_TMP | sed "s/^/00/g" )
+    fi
+    if [ ${#ADDR_OLD_TMP} -le 4 ]; then
+        ADDR_OLD_TMP=$( echo $ADDR_OLD_TMP | sed "s/^/00/g" )
+    fi
+    if [ ${#ADDR_OLD_TMP} -le 6 ]; then
+        ADDR_OLD_TMP=$( echo $ADDR_OLD_TMP | sed "s/^/00/g" )
+    fi
+    if [ ${#ADDR_OLD_TMP} -lt 8 ]; then
+        ADDR_OLD_TMP=$( echo $ADDR_OLD_TMP | sed "s/^/00/g" )
+    fi
+    # ADDR_OLD_TMP=$(echo $ADDR_OLD_TMP | sed 's/^/0x/')
     ADDRS_OLD+=( $ADDR_OLD_TMP )
 
-    ADDR_NEW_TMP=$(echo -e "$S_DATA" | head -n $((3*$i)) | tail -n3 | head -n3 | tail -n1)
-    ADDR_NEW_TMP_SZ=$(echo $ADDR_NEW_TMP | tr -d '\n' | wc -c)
-    if [ $(($ADDR_NEW_TMP_SZ%2)) -ne 0 ]; then
-        ADDR_NEW_TMP=$( echo $ADDR_NEW_TMP | sed "s/0x/0x0/g" )
+    ADDR_NEW_TMP=$(echo -e "$S_DATA" | head -n $((3*$i)) | tail -n3 | head -n3 | tail -n1 | sed "s/^0x//g")
+    if [ $((${#ADDR_NEW_TMP}%2)) -ne 0 ]; then
+        ADDR_NEW_TMP=$( echo $ADDR_NEW_TMP | sed "s/^/0/g" )
     fi
+    if [ ${#ADDR_NEW_TMP} -le 2 ]; then
+        ADDR_NEW_TMP=$( echo $ADDR_NEW_TMP | sed "s/^/00/g" )
+    fi
+    if [ ${#ADDR_NEW_TMP} -le 4 ]; then
+        ADDR_NEW_TMP=$( echo $ADDR_NEW_TMP | sed "s/^/00/g" )
+    fi
+    if [ ${#ADDR_NEW_TMP} -le 6 ]; then
+        ADDR_NEW_TMP=$( echo $ADDR_NEW_TMP | sed "s/^/00/g" )
+    fi
+    if [ ${#ADDR_NEW_TMP} -lt 8 ]; then
+        ADDR_NEW_TMP=$( echo $ADDR_NEW_TMP | sed "s/^/00/g" )
+    fi
+    # ADDR_NEW_TMP=$(echo $ADDR_NEW_TMP | sed 's/^/0x/')
     ADDRS_NEW+=( $ADDR_NEW_TMP )
 
 done
@@ -165,6 +237,12 @@ for id in ${SECTION_IDS[@]}; do
         SECTION_IDS_HEX=$( echo $SECTION_IDS_HEX | sed "s/^/0/g" )
     fi
     if [ ${#SECTION_IDS_HEX} -le 2 ]; then
+        SECTION_IDS_HEX=$( echo $SECTION_IDS_HEX | sed "s/^/00/g" )
+    fi
+    if [ ${#SECTION_IDS_HEX} -le 4 ]; then
+        SECTION_IDS_HEX=$( echo $SECTION_IDS_HEX | sed "s/^/00/g" )
+    fi
+    if [ ${#SECTION_IDS_HEX} -le 6 ]; then
         SECTION_IDS_HEX=$( echo $SECTION_IDS_HEX | sed "s/^/00/g" )
     fi
     SECTION_IDS_LE_HEXES+=( $(echo $SECTION_IDS_HEX | tac -rs .. | echo "$(tr -d '\n')") )
@@ -233,8 +311,8 @@ while [ $i -lt $S_CNT ]; do
     echo "+ SYMTAB + DYNAMIC PATCHING"
     echo "| SECTIONS: ${SECTIONS[$i]}"
     # Compute the new addr of section after .text and patch it's symtab and dynamic addresses
-    S_OLD_ADDR=$(echo ${ADDRS_OLD[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
-    S_NEW_ADDR=$(echo ${ADDRS_NEW[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
+    S_OLD_ADDR=$(echo ${ADDRS_OLD[$i]} | tac -rs .. | echo "$(tr -d '\n')")
+    S_NEW_ADDR=$(echo ${ADDRS_NEW[$i]} | tac -rs .. | echo "$(tr -d '\n')")
     echo "|-> LOCAL | DEFAULT"
     patch_symtab_and_dynamic_sections $S_OLD_ADDR $S_NEW_ADDR ${SECTION_IDS_LE_HEXES[$i]} "00" "03" # LOCAL  DEFAULT
     echo "|-> GLOBAL | HIDDEN"
@@ -253,8 +331,8 @@ while [ $i -lt $S_CNT ]; do
     # patch section header address, set VMA=LMA
     echo "+ SECTION HEADER VMA=LMA PATCHING"
     echo "| SECTIONS: ${SECTIONS[$i]}"
-    S_OLD_ADDR=$(echo ${ADDRS_OLD[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
-    S_NEW_ADDR=$(echo ${ADDRS_NEW[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
+    S_OLD_ADDR=$(echo ${ADDRS_OLD[$i]} | tac -rs .. | echo "$(tr -d '\n')")
+    S_NEW_ADDR=$(echo ${ADDRS_NEW[$i]} | tac -rs .. | echo "$(tr -d '\n')")
     echo "S_OLD_ADDR: $S_OLD_ADDR"
     echo "S_NEW_ADDR: $S_NEW_ADDR"
     SH_OLD_HEX=$(echo "${S_OLD_ADDR}000000000000${S_NEW_ADDR}")
