@@ -1,12 +1,11 @@
 re-*.txt
 od-*.txt
+hex-*.txt
+*.text
 target.c
 target
 target_*
-target.text
+target.temp
 patch.S
 patch.o
-patch.text
-hex-dyn.txt
-hex-sym.txt
-hex-section.txt
+objcopy-*.txt
