@@ -11,7 +11,11 @@ if [ ${#2} -gt 1 ]; then
     echo Custom target binary
     echo
 else
-    ${PFX}gcc target.c -o target -g -Wall && rm target.c
+    if [[ ${PFX} =~ "llvm" ]]; then
+        ${CC_PFX}clang target.c -o target -g -Wall && rm target.c
+    else
+        aarch64-linux-gnu-gcc target.c -o target -g -Wall && rm target.c
+    fi
 fi
 
 # Dump .text section from Target
@@ -26,7 +30,7 @@ ${PFX}readelf -a target > re-target_pre.txt
 # Print obj data of initial target file
 ${PFX}objdump -d target > od-target-initial.txt
 
-if [ ${#PFX} -gt 1 ]; then
+if [[ ${PFX} =~ "aarch64" || ${PFX} =~ "llvm" ]]; then
 # Prepare Patch Code
 cat << EOF > patch.S
 .section .text
@@ -56,7 +60,12 @@ __patch:
 .size __patch, .-__patch
 EOF
 fi
-${PFX}as -c patch.S -o patch.o && rm patch.S
+if [[ ${PFX} =~ "llvm" ]]; then
+    # ${CC_PFX}clang -c patch.S -o patch.o && rm patch.S
+    aarch64-linux-gnu-as -c patch.S -o patch.o && rm patch.S
+else
+    ${PFX}as -c patch.S -o patch.o && rm patch.S
+fi
 
 # Dump ELF data from Patch
 ${PFX}readelf -a patch.o > re-patch.txt
@@ -195,9 +204,9 @@ while [ $i -lt $S_CNT ]; do
 done
 echo
 
-SECTION_HDR_START=$(readelf -h target | grep -E "Start of section headers"  | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
-SECTION_HDR_WIDTH=$(readelf -h target | grep -E "Size of section headers"   | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
-SECTION_HDR_COUNT=$(readelf -h target | grep -E "Number of section headers" | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+SECTION_HDR_START=$(${PFX}readelf -h target | grep -E "Start of section headers"  | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+SECTION_HDR_WIDTH=$(${PFX}readelf -h target | grep -E "Size of section headers"   | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+SECTION_HDR_COUNT=$(${PFX}readelf -h target | grep -E "Number of section headers" | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
 xxd -g0 -s $SECTION_HDR_START -l $(($SECTION_HDR_COUNT*$SECTION_HDR_WIDTH)) target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > hex-section.txt
 
 i=0
