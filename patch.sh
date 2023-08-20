@@ -90,16 +90,20 @@ if [[ ${PFX} =~ "llvm" ]]; then
     TXT_ADDR_LE=$(echo $TXT_ADDR | tac -rs .. | echo "$(tr -d '\n')")
     echo "TXT_ADDR: $TXT_ADDR"
     echo "TXT_ADDR_LE: $TXT_ADDR_LE"
-    echo "TARGET_TEXT_SZ_ORIG: $TARGET_TEXT_SZ_ORIG"
-    TXT_ADDR_NEW=0$(printf %x $((0x$TXT_ADDR+$TARGET_TEXT_SZ_ORIG)))
-    TXT_ADDR_NEW_LE=$(echo "${TXT_ADDR_NEW}" | tac -rs .. | echo "$(tr -d '\n')")
-    echo "TXT_ADDR_NEW: $TXT_ADDR_NEW"
+    echo
+    TARGET_TEXT_SZ_ORIG_LE=$(echo "${TARGET_TEXT_SZ_ORIG}" | sed "s/^0x//g;s/^/0/g" | tac -rs .. | echo "$(tr -d '\n')")
+    echo "TARGET_TEXT_SZ_ORIG_LE: $TARGET_TEXT_SZ_ORIG_LE"
+    TARGET_TEXT_SZ_PATCHED_LE=$(echo "${TARGET_TEXT_SZ_PATCHED}" | sed "s/^0x//g;s/^/0/g" | tac -rs .. | echo "$(tr -d '\n')")
+    echo "TARGET_TEXT_SZ_PATCHED_LE: $TARGET_TEXT_SZ_PATCHED_LE"
+    echo
+    # 00b002 0000000000 00b002 0000000000 f80005
     xxd -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > hex-target.txt
-    TXT_MATCH=$(cat hex-target.txt | grep -oE "${TXT_ADDR_LE}0000000000${TXT_ADDR_LE}" | head -n1 | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-    TXT_PATCH=$(echo "${TXT_ADDR_NEW_LE}0000000000${TXT_ADDR_NEW_LE}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    TXT_MATCH=$(cat hex-target.txt | grep -oE "${TXT_ADDR_LE}0000000000${TXT_ADDR_LE}0000000000${TARGET_TEXT_SZ_ORIG_LE}" | head -n1 | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    TXT_PATCH=$(echo "${TXT_ADDR_LE}0000000000${TXT_ADDR_LE}0000000000${TARGET_TEXT_SZ_PATCHED_LE}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
     echo "TXT_MATCH: $TXT_MATCH"
     echo "TXT_PATCH: $TXT_PATCH"
     sed -i "s|$TXT_MATCH|$TXT_PATCH|g" target
+    rm hex-target.txt
     echo
 
 fi
@@ -108,6 +112,12 @@ fi
 ${PFX}objcopy --update-section .text=target.text target target.temp &> objcopy-out.txt && rm target.temp
 S_CNT=$(cat objcopy-out.txt | wc -l)
 S_DATA=$(cat objcopy-out.txt | cut -f3 -d: | sed "s/.*section //g;s/lma //g;s/adjusted to //g;s/\n/ /g;s/ /\n/g")
+
+if [[ ${PFX} =~ "llvm" ]]; then
+    aarch64-linux-gnu-objcopy --update-section .text=target.text target target.temp &> objcopy-out.txt && rm target.temp
+    S_CNT=$(cat objcopy-out.txt | wc -l)
+    S_DATA=$(cat objcopy-out.txt | cut -f3 -d: | sed "s/.*section //g;s/lma //g;s/adjusted to //g;s/\n/ /g;s/ /\n/g")
+fi
 rm objcopy-out.txt
 
 i=0
