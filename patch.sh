@@ -152,7 +152,7 @@ if [[ ${PFX} =~ "llvm" ]]; then
     echo "TXT_MATCH: $TXT_MATCH"
     echo "TXT_PATCH: $TXT_PATCH"
     sed -i "s|$TXT_MATCH|$TXT_PATCH|g" target
-    # rm hex-target.txt
+    rm hex-target.txt
     echo
 
 fi
@@ -240,12 +240,7 @@ for id in ${SECTION_IDS[@]}; do
     if [ ${#SECTION_IDS_HEX} -le 2 ]; then
         SECTION_IDS_HEX=$( echo $SECTION_IDS_HEX | sed "s/^/00/g" )
     fi
-    if [ ${#SECTION_IDS_HEX} -le 4 ]; then
-        SECTION_IDS_HEX=$( echo $SECTION_IDS_HEX | sed "s/^/00/g" )
-    fi
-    if [ ${#SECTION_IDS_HEX} -le 6 ]; then
-        SECTION_IDS_HEX=$( echo $SECTION_IDS_HEX | sed "s/^/00/g" )
-    fi
+    # clamped to 4 according to section header spec (8 bytes)
     SECTION_IDS_LE_HEXES+=( $(echo $SECTION_IDS_HEX | tac -rs .. | echo "$(tr -d '\n')") )
 done
 echo "| SECTION_IDS_LE_HEXES: ${SECTION_IDS_LE_HEXES[@]}"
@@ -255,6 +250,11 @@ echo
 # Patch .dynamic and .symtab sections of section following .text
 function patch_symtab_and_dynamic_sections() {
 
+    echo "| S_OLD_ADDR: $1"
+    echo "| S_NEW_ADDR: $2"
+    echo "| SECTION_IDS_LE_HEXES[i]: $3"
+    echo "| ST_OTHER: $4"
+    echo "| ST_INFO: $5"
     echo "| MATCH ADDR: ${5}${4}${3}${1} SHIFT: $1 (LE) -> $2 (LE) SECTION ID: $3 (LE)"
 
     # Compute .dynamic section address and offset
@@ -313,6 +313,7 @@ while [ $i -lt $S_CNT ]; do
     echo "+ SYMTAB + DYNAMIC PATCHING"
     echo "| SECTIONS: ${SECTIONS[$i]}"
     # Compute the new addr of section after .text and patch it's symtab and dynamic addresses
+    # These are 16 bytes everywhere.
     S_OLD_ADDR=$(echo ${ADDRS_OLD[$i]} | tac -rs .. | echo "$(tr -d '\n')")
     S_NEW_ADDR=$(echo ${ADDRS_NEW[$i]} | tac -rs .. | echo "$(tr -d '\n')")
     echo "|-> LOCAL | DEFAULT"
