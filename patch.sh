@@ -255,12 +255,18 @@ while [ $i -lt $S_CNT ]; do
     echo "| SECTIONS: ${SECTIONS[$i]}"
     S_OLD_ADDR=$(echo ${ADDRS_OLD[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
     S_NEW_ADDR=$(echo ${ADDRS_NEW[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
+    echo "S_OLD_ADDR: $S_OLD_ADDR"
+    echo "S_NEW_ADDR: $S_NEW_ADDR"
     SH_OLD_HEX=$(echo "${S_OLD_ADDR}000000000000${S_NEW_ADDR}")
     FUZZY_END_HEX=$(cat hex-section.txt | grep -oE "${S_OLD_ADDR}000000000000[0-9a-f]{4}" | grep -oE "[0-9a-f]{4}$")
     if [ ${#FUZZY_END_HEX} -gt 0 ]; then
         echo "| FZEHSZ: ${#FUZZY_END_HEX}"
         SH_MATCH=$(echo "$(echo $SH_OLD_HEX | grep -oE "^[0-9a-f]{16}")$FUZZY_END_HEX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
         SH_PATCH=$(echo "${FUZZY_END_HEX}000000000000${FUZZY_END_HEX}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        if [[ ${PFX} =~ "llvm" ]]; then # this is actually for accounting 6 length addresses and not llvm specifically
+            SH_MATCH=$(echo "$(echo $SH_OLD_HEX | grep -oE "^[0-9a-f]{18}")$FUZZY_END_HEX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+            SH_PATCH=$(echo "${S_NEW_ADDR}0000000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        fi
     else
         SH_MATCH=$(echo "${S_OLD_ADDR}000000000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
         SH_PATCH=$(echo "${S_NEW_ADDR}000000000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
@@ -272,6 +278,9 @@ while [ $i -lt $S_CNT ]; do
     i=$((i+1))
 done
 
+# 00b107 0000000000 00b107
+# 10b107 0000000000 10b107
+# TODO: Account for 4,6 lengths in addresses
 rm hex-section.txt
 
 # Dump ELF data of final file and diff
