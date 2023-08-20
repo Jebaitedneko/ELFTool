@@ -198,9 +198,14 @@ while [ $i -lt $S_CNT ]; do
     S_NEW_ADDR=$(echo ${ADDRS_NEW[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
     SH_OLD_HEX=$(echo "${S_OLD_ADDR}000000000000${S_NEW_ADDR}")
     FUZZY_END_HEX=$(cat hex-section.txt | grep -oE "${S_OLD_ADDR}000000000000[0-9a-f]{4}" | grep -oE "[0-9a-f]{4}$")
-    SH_MATCH=$(echo "$(echo $SH_OLD_HEX | grep -oE "^[0-9a-f]{16}")$FUZZY_END_HEX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-    SH_PATCH=$(echo "${FUZZY_END_HEX}000000000000${FUZZY_END_HEX}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-    cat hex-section.txt | grep -oE $SH_MATCH | sed "s/$SH_MATCH/$SH_PATCH/g"
+    if [ ${#FUZZY_END_HEX} -gt 0 ]; then
+        echo "FZEHSZ: ${#FUZZY_END_HEX}"
+        SH_MATCH=$(echo "$(echo $SH_OLD_HEX | grep -oE "^[0-9a-f]{16}")$FUZZY_END_HEX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        SH_PATCH=$(echo "${FUZZY_END_HEX}000000000000${FUZZY_END_HEX}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    else
+        SH_MATCH=$(echo "${S_OLD_ADDR}000000000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        SH_PATCH=$(echo "${S_NEW_ADDR}000000000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    fi
     echo "SECTION HEADER VMA=LMA PATCHING"
     echo "SECTIONS: ${SECTIONS[$i]}"
     echo "SH_MATCH: $SH_MATCH"
