@@ -122,6 +122,7 @@ echo "-------------------------------------------------------"
 echo
 
 if [[ ${PFX} =~ "llvm" ]]; then
+
     TXT_ADDR=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n')
     if [ $((${#TXT_ADDR}%2)) -ne 0 ]; then
         TXT_ADDR=$( echo $TXT_ADDR | sed "s/^/0/g" )
@@ -336,19 +337,20 @@ while [ $i -lt $S_CNT ]; do
     S_NEW_ADDR=$(echo ${ADDRS_NEW[$i]} | tac -rs .. | echo "$(tr -d '\n')")
     echo "S_OLD_ADDR: $S_OLD_ADDR"
     echo "S_NEW_ADDR: $S_NEW_ADDR"
-    SH_OLD_HEX=$(echo "${S_OLD_ADDR}000000000000${S_NEW_ADDR}")
-    FUZZY_END_HEX=$(cat hex-section.txt | grep -oE "${S_OLD_ADDR}000000000000[0-9a-f]{4}" | grep -oE "[0-9a-f]{4}$")
+    # 00b10700 00000000 00b10700
+    SH_OLD_HEX=$(echo "${S_OLD_ADDR}00000000${S_NEW_ADDR}")
+    FUZZY_END_HEX=$(cat hex-section.txt | grep -oE "${S_OLD_ADDR}00000000[0-9a-f]{8}" | grep -oE "[0-9a-f]{8}$")
     if [ ${#FUZZY_END_HEX} -gt 0 ]; then
-        echo "| FZEHSZ: ${#FUZZY_END_HEX}"
+        echo "| FUZZY_END_HEX: ${FUZZY_END_HEX}"
+        echo "| FUZZY_END_HEX_SZ: ${#FUZZY_END_HEX}"
         SH_MATCH=$(echo "$(echo $SH_OLD_HEX | grep -oE "^[0-9a-f]{16}")$FUZZY_END_HEX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-        SH_PATCH=$(echo "${FUZZY_END_HEX}000000000000${FUZZY_END_HEX}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-        if [[ ${PFX} =~ "llvm" ]]; then # this is actually for accounting 6 length addresses and not llvm specifically
-            SH_MATCH=$(echo "$(echo $SH_OLD_HEX | grep -oE "^[0-9a-f]{18}")$FUZZY_END_HEX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-            SH_PATCH=$(echo "${S_NEW_ADDR}0000000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        SH_PATCH=$(echo "${FUZZY_END_HEX}00000000${FUZZY_END_HEX}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        if [[ ${PFX} =~ "llvm" ]]; then
+            SH_PATCH=$(echo "${S_NEW_ADDR}00000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
         fi
     else
-        SH_MATCH=$(echo "${S_OLD_ADDR}000000000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-        SH_PATCH=$(echo "${S_NEW_ADDR}000000000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        SH_MATCH=$(echo "${S_OLD_ADDR}00000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        SH_PATCH=$(echo "${S_NEW_ADDR}00000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
     fi
     echo "| SH_MATCH: $SH_MATCH"
     echo "| SH_PATCH: $SH_PATCH"
@@ -357,9 +359,6 @@ while [ $i -lt $S_CNT ]; do
     i=$((i+1))
 done
 
-# 00b107 0000000000 00b107
-# 10b107 0000000000 10b107
-# TODO: Account for 4,6 lengths in addresses
 rm hex-section.txt
 
 # Dump ELF data of final file and diff
