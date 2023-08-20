@@ -85,6 +85,25 @@ echo "| TARGET_TEXT_SZ_PATCHED: $TARGET_TEXT_SZ_PATCHED"
 echo "-------------------------------------------------------"
 echo
 
+if [[ ${PFX} =~ "llvm" ]]; then
+    TXT_ADDR=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n')
+    TXT_ADDR_LE=$(echo $TXT_ADDR | tac -rs .. | echo "$(tr -d '\n')")
+    echo "TXT_ADDR: $TXT_ADDR"
+    echo "TXT_ADDR_LE: $TXT_ADDR_LE"
+    echo "TARGET_TEXT_SZ_ORIG: $TARGET_TEXT_SZ_ORIG"
+    TXT_ADDR_NEW=0$(printf %x $((0x$TXT_ADDR+$TARGET_TEXT_SZ_ORIG)))
+    TXT_ADDR_NEW_LE=$(echo "${TXT_ADDR_NEW}" | tac -rs .. | echo "$(tr -d '\n')")
+    echo "TXT_ADDR_NEW: $TXT_ADDR_NEW"
+    xxd -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > hex-target.txt
+    TXT_MATCH=$(cat hex-target.txt | grep -oE "${TXT_ADDR_LE}0000000000${TXT_ADDR_LE}" | head -n1 | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    TXT_PATCH=$(echo "${TXT_ADDR_NEW_LE}0000000000${TXT_ADDR_NEW_LE}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    echo "TXT_MATCH: $TXT_MATCH"
+    echo "TXT_PATCH: $TXT_PATCH"
+    sed -i "s|$TXT_MATCH|$TXT_PATCH|g" target
+    echo
+
+fi
+
 # [PRE-RUN] Update .text section with new .text data
 ${PFX}objcopy --update-section .text=target.text target target.temp &> objcopy-out.txt && rm target.temp
 S_CNT=$(cat objcopy-out.txt | wc -l)
@@ -150,8 +169,13 @@ function patch_symtab_and_dynamic_sections() {
     echo "| MATCH ADDR: ${5}${4}${3}${1} SHIFT: $1 (LE) -> $2 (LE) SECTION ID: $3 (LE)"
 
     # Compute .dynamic section address and offset
-    DYN_ADDR=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynamic" -A2  | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
-    DYN_SIZE=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynamic" -A2  | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 8p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+    if [[ ${PFX} =~ "llvm" ]]; then
+        SIZE_SELECT=7
+    else
+        SIZE_SELECT=8
+    fi
+    DYN_ADDR=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynamic" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+    DYN_SIZE=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynamic" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n ${SIZE_SELECT}p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
     echo "| Dynamic Section at $DYN_ADDR of size $DYN_SIZE"
     xxd -s $(printf %d $DYN_ADDR) -l $(printf %d $DYN_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE [0-9a-f]{32} > hex-dyn.txt
 
@@ -166,8 +190,13 @@ function patch_symtab_and_dynamic_sections() {
     fi
 
     # Compute .symtab section address and offset
-    SYM_ADDR=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .symtab" -A2  | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
-    SYM_SIZE=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .symtab" -A2  | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 8p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+    if [[ ${PFX} =~ "llvm" ]]; then
+        SIZE_SELECT=7
+    else
+        SIZE_SELECT=8
+    fi
+    SYM_ADDR=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .symtab" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+    SYM_SIZE=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .symtab" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n ${SIZE_SELECT}p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
     echo "| Symtab Section at $SYM_ADDR of size $SYM_SIZE"
     xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_ADDR) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE [0-9a-f]{48} > hex-sym.txt
 
