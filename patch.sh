@@ -335,8 +335,8 @@ while [ $i -lt $S_CNT ]; do
     echo "| SECTIONS: ${SECTIONS[$i]}"
     S_OLD_ADDR=$(echo ${ADDRS_OLD[$i]} | tac -rs .. | echo "$(tr -d '\n')")
     S_NEW_ADDR=$(echo ${ADDRS_NEW[$i]} | tac -rs .. | echo "$(tr -d '\n')")
-    echo "S_OLD_ADDR: $S_OLD_ADDR"
-    echo "S_NEW_ADDR: $S_NEW_ADDR"
+    echo "| S_OLD_ADDR: $S_OLD_ADDR"
+    echo "| S_NEW_ADDR: $S_NEW_ADDR"
     # 00b10700 00000000 00b10700
     SH_OLD_HEX=$(echo "${S_OLD_ADDR}00000000${S_NEW_ADDR}")
     FUZZY_END_HEX=$(cat hex-section.txt | grep -oE "${S_OLD_ADDR}00000000[0-9a-f]{8}" | grep -oE "[0-9a-f]{8}$")
@@ -367,3 +367,5 @@ diff -ur re-target_pre.txt re-target_pst.txt > re-diff.txt
 
 # Print obj data of final file
 ${PFX}objdump -d target > od-target-final.txt
+
+diff -ur <(cat od-target-initial.txt) <(cat od-target-final.txt) > od-diff.txt
