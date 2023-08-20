@@ -13,7 +13,7 @@ ${PFX}gcc target.c -o target -g -Wall && rm target.c
 # Dump .text section from Target
 ${PFX}objcopy --dump-section .text=target.text target
 TARGET_TEXT_SZ_ORIG=$(printf %x $(stat -c '%s' target.text) | sed 's/^0*//;s/^/0x/')
-echo "==== TARGET_TEXT_SZ_ORIG: $TARGET_TEXT_SZ_ORIG ===="
+echo "TARGET_TEXT_SZ_ORIG: $TARGET_TEXT_SZ_ORIG"
 
 # Dump ELF data from Target
 ${PFX}readelf -a target > re-target_pre.txt
@@ -54,19 +54,18 @@ ${PFX}as -c patch.S -o patch.o && rm patch.S
 ${PFX}readelf -a patch.o > re-patch.txt
 
 # Print .text section from Patch
-echo "==== patch.o objdump start ===="
-${PFX}objdump -d patch.o
-echo "==== patch.o objdump end ===="
+${PFX}objdump -d patch.o > od-patch.txt
 
 # Dump .text section from Patch
 ${PFX}objcopy --dump-section .text=patch.text patch.o && rm patch.o
 PATCH_TEXT_SZ=$(printf %x $(stat -c '%s' patch.text) | sed 's/^0*//;s/^/0x/')
-echo "==== PATCH_TEXT_SZ: $PATCH_TEXT_SZ ===="
+echo "PATCH_TEXT_SZ: $PATCH_TEXT_SZ"
 
 # Merge .text section from Patch into Target
 cat patch.text >> target.text && rm patch.text
 TARGET_TEXT_SZ_PATCHED=0x$(printf %x $(stat -c '%s' target.text))
-echo "==== TARGET_TEXT_SZ_PATCHED: $TARGET_TEXT_SZ_PATCHED ===="
+echo "TARGET_TEXT_SZ_PATCHED: $TARGET_TEXT_SZ_PATCHED"
+echo
 
 # [PRE-RUN] Update .text section with new .text data
 ${PFX}objcopy --update-section .text=target.text target target.temp &> objcopy-out.txt && rm target.temp
@@ -76,8 +75,8 @@ rm objcopy-out.txt
 
 i=0
 SECTIONS=()
-ADDR_OLD=()
-ADDR_NEW=()
+ADDRS_OLD=()
+ADDRS_NEW=()
 while [ $i -lt $S_CNT ]; do
     i=$((i+1))
     SECTIONS+=( $(echo -e "$S_DATA" | head -n $((3*$i)) | tail -n3 | head -n1 | tail -n1) )
@@ -87,27 +86,28 @@ while [ $i -lt $S_CNT ]; do
     if [ $(($ADDR_OLD_TMP_SZ%2)) -ne 0 ]; then
         ADDR_OLD_TMP=$( echo $ADDR_OLD_TMP | sed "s/0x/0x0/g" )
     fi
-    ADDR_OLD+=( $ADDR_OLD_TMP )
+    ADDRS_OLD+=( $ADDR_OLD_TMP )
 
     ADDR_NEW_TMP=$(echo -e "$S_DATA" | head -n $((3*$i)) | tail -n3 | head -n3 | tail -n1)
     ADDR_NEW_TMP_SZ=$(echo $ADDR_NEW_TMP | tr -d '\n' | wc -c)
     if [ $(($ADDR_NEW_TMP_SZ%2)) -ne 0 ]; then
         ADDR_NEW_TMP=$( echo $ADDR_NEW_TMP | sed "s/0x/0x0/g" )
     fi
-    ADDR_NEW+=( $ADDR_NEW_TMP )
+    ADDRS_NEW+=( $ADDR_NEW_TMP )
 done
-echo ${SECTIONS[@]}
-echo ${ADDR_OLD[@]}
-echo ${ADDR_NEW[@]}
+echo "SECTIONS: ${SECTIONS[@]}"
+echo "ADDRS_OLD: ${ADDRS_OLD[@]}"
+echo "ADDRS_NEW: ${ADDRS_NEW[@]}"
+echo
 
 SECTION_IDS=()
 for section in ${SECTIONS[@]}; do
-    PATCH_SECTION=$(${PFX}readelf -a target | grep -E " ${section}  | _${section/^\\./}  " | grep -oE "\[.*\]" | sed "s/\[//g;s/\]//g" | tr -d '\n')
+    PATCH_SECTION=$(${PFX}readelf -t target | grep -E "\[[0-9a-f]{2}\] ${section}$| \[[0-9a-f]{2}\] $(echo ${section} | sed "s/^./_/g")$" | grep -oE "\[.*\]" | sed "s/\[//g;s/\]//g" | tr -d '\n')
     SECTION_IDS+=( $PATCH_SECTION )
 done
-echo ${SECTION_IDS[@]}
+echo "SECTION_IDS: ${SECTION_IDS[@]}"
 
-SECTION_IDS_HEXES=()
+SECTION_IDS_LE_HEXES=()
 for id in ${SECTION_IDS[@]}; do
     SECTION_IDS_HEX=$(printf %x $id)
     if [ $((${#SECTION_IDS_HEX}%2)) -ne 0 ]; then
@@ -116,45 +116,47 @@ for id in ${SECTION_IDS[@]}; do
     if [ ${#SECTION_IDS_HEX} -le 2 ]; then
         SECTION_IDS_HEX=$( echo $SECTION_IDS_HEX | sed "s/^/00/g" )
     fi
-    SECTION_IDS_HEXES+=( $(echo $SECTION_IDS_HEX | tac -rs .. | echo "$(tr -d '\n')") )
-    echo "$id ($SECTION_IDS_HEX)"
+    SECTION_IDS_LE_HEXES+=( $(echo $SECTION_IDS_HEX | tac -rs .. | echo "$(tr -d '\n')") )
 done
-echo ${SECTION_IDS_HEXES[@]}
+echo "SECTION_IDS_LE_HEXES: ${SECTION_IDS_LE_HEXES[@]}"
+echo
 
 # Patch .dynamic and .symtab sections of section following .text
 function patch_symtab_and_dynamic_sections() {
 
-    echo "ADDR SHIFT: $1 (LE) -> $2 (LE) SECTION ID: $3 (LE)"
-    echo "ADDR: ${5}${4}${3}${1}"
+    echo
+
+    echo "ADDR: ${5}${4}${3}${1} SHIFT: $1 (LE) -> $2 (LE) SECTION ID: $3 (LE)"
 
     # Compute .dynamic section address and offset
-    DYN_ADDR=$(${PFX}readelf -a target | grep ".dynamic  " -A1 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 5p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
-    DYN_SIZE=$(${PFX}readelf -a target | grep ".dynamic  " -A1 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
-    xxd -s $(printf %d $DYN_ADDR) -l $(printf %d $DYN_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > dyn.hex
+    DYN_ADDR=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynamic" -A2  | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+    DYN_SIZE=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynamic" -A2  | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 8p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+    xxd -s $(printf %d $DYN_ADDR) -l $(printf %d $DYN_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > hex-dyn.txt
 
     DYN_OLDHX=$(xxd -s $(printf %d $DYN_ADDR) -l $(printf %d $DYN_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE ".{,16}$1.{,4}")
     if [ ${#DYN_OLDHX} -gt 2 ]; then
         DYN_PATCH=$(echo $DYN_OLDHX | sed "s/$1/$2/g")
-        DYN_NEWHX=$(echo $DYN_PATCH | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        echo "DYN_OLDHX: $DYN_OLDHX"
+        echo "DYN_PATCH: $DYN_PATCH"
+        DYN_PATCH=$(echo $DYN_PATCH | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
         DYN_OLDHX=$(echo $DYN_OLDHX | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-        echo "DYN_PATCH: $DYN_OLDHX|$DYN_NEWHX"
-        sed -i "s|$DYN_OLDHX|$DYN_NEWHX|g" target
+        sed -i "s|$DYN_OLDHX|$DYN_PATCH|g" target
     fi
 
     # Compute .symtab section address and offset
-    SYM_ADDR=$(${PFX}readelf -a target | grep ".symtab  " -A1 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 5p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
-    SYM_SIZE=$(${PFX}readelf -a target | grep ".symtab  " -A1 | tr -d '\n' | sed "s/  \+/\n/g"  | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
-    xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_ADDR) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE [0-9a-f]{48} > sym.hex
+    SYM_ADDR=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .symtab" -A2  | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+    SYM_SIZE=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .symtab" -A2  | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 8p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+    xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_ADDR) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE [0-9a-f]{48} > hex-sym.txt
 
     SYM_OLDHX=$(xxd -s $(printf %d $SYM_ADDR) -l $(printf %d $SYM_ADDR) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" | grep -oE ".{,8}${5}${4}${3}${1}.{,16}")
-    SYM_PATCH=$(echo $SYM_OLDHX | sed "s/$1/$2/g")
-    echo "SYM_OLDHX: $SYM_OLDHX"
-    echo "SYM_PATCH: $SYM_PATCH"
-    SYM_NEWHX=$(echo $SYM_PATCH | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-    SYM_OLDHX=$(echo $SYM_OLDHX | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-    echo "PATCH: $SYM_OLDHX|$SYM_NEWHX"
-    sed -i "s|$SYM_OLDHX|$SYM_NEWHX|g" target
-
+    if [ ${#SYM_OLDHX} -gt 2 ]; then
+        SYM_PATCH=$(echo $SYM_OLDHX | sed "s/$1/$2/g")
+        echo "SYM_OLDHX: $SYM_OLDHX"
+        echo "SYM_PATCH: $SYM_PATCH"
+        SYM_PATCH=$(echo $SYM_PATCH | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        SYM_OLDHX=$(echo $SYM_OLDHX | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        sed -i "s|$SYM_OLDHX|$SYM_PATCH|g" target
+    fi
 }
 
 # Update .text section with new .text data
@@ -166,46 +168,45 @@ ${PFX}objcopy --add-symbol __patch=".text:${TARGET_TEXT_SZ_ORIG},global,function
 i=0
 while [ $i -lt $S_CNT ]; do
     # Compute the new addr of section after .text and patch it's symtab and dynamic addresses
-    S_OLD_ADDR=$(echo ${ADDR_OLD[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
-    S_NEW_ADDR=$(echo ${ADDR_NEW[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
-    patch_symtab_and_dynamic_sections $S_OLD_ADDR $S_NEW_ADDR ${SECTION_IDS_HEXES[$i]} "00" "03" # LOCAL  DEFAULT
-    patch_symtab_and_dynamic_sections $S_OLD_ADDR $S_NEW_ADDR ${SECTION_IDS_HEXES[$i]} "02" "12" # GLOBAL HIDDEN
+    S_OLD_ADDR=$(echo ${ADDRS_OLD[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
+    S_NEW_ADDR=$(echo ${ADDRS_NEW[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
+    patch_symtab_and_dynamic_sections $S_OLD_ADDR $S_NEW_ADDR ${SECTION_IDS_LE_HEXES[$i]} "00" "03" # LOCAL  DEFAULT
+    patch_symtab_and_dynamic_sections $S_OLD_ADDR $S_NEW_ADDR ${SECTION_IDS_LE_HEXES[$i]} "02" "12" # GLOBAL HIDDEN
     i=$((i+1))
 done
 
 # i=0
 # while [ $i -lt $S_CNT ]; do
-#     ${PFX}objcopy --change-section-address ${SECTIONS[$i]}=${ADDR_NEW[$i]} target target_patch && mv target_patch target
+#     ${PFX}objcopy --change-section-address ${SECTIONS[$i]}=${ADDRS_NEW[$i]} target target_patch && mv target_patch target
 #     i=$((i+1))
 # done
 
 SECTION_HDR_START=$(readelf -h target | grep -E "Start of section headers"  | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
 SECTION_HDR_WIDTH=$(readelf -h target | grep -E "Size of section headers"   | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
 SECTION_HDR_COUNT=$(readelf -h target | grep -E "Number of section headers" | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
-xxd -g0 -s $SECTION_HDR_START -l $(($SECTION_HDR_COUNT*$SECTION_HDR_WIDTH)) target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > target.hex
+xxd -g0 -s $SECTION_HDR_START -l $(($SECTION_HDR_COUNT*$SECTION_HDR_WIDTH)) target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > hex-section.txt
 
+echo
 i=0
 while [ $i -lt $S_CNT ]; do
     # patch section header address, set VMA=LMA
-    S_OLD_ADDR=$(echo ${ADDR_OLD[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
-    S_NEW_ADDR=$(echo ${ADDR_NEW[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
+    S_OLD_ADDR=$(echo ${ADDRS_OLD[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
+    S_NEW_ADDR=$(echo ${ADDRS_NEW[$i]} | sed "s/0x//g" | tac -rs .. | echo "$(tr -d '\n')")
     SH_OLD_HEX=$(echo "${S_OLD_ADDR}000000000000${S_NEW_ADDR}")
-    FUZZY_END_HEX=$(cat target.hex | grep -oE "${S_OLD_ADDR}000000000000[0-9a-f]{4}" | grep -oE "[0-9a-f]{4}$")
-    echo $SH_OLD_HEX
+    FUZZY_END_HEX=$(cat hex-section.txt | grep -oE "${S_OLD_ADDR}000000000000[0-9a-f]{4}" | grep -oE "[0-9a-f]{4}$")
     SH_MATCH=$(echo "$(echo $SH_OLD_HEX | grep -oE "^[0-9a-f]{16}")$FUZZY_END_HEX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
     SH_PATCH=$(echo "${FUZZY_END_HEX}000000000000${FUZZY_END_HEX}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-    cat target.hex | grep -oE $SH_MATCH | sed "s/$SH_MATCH/$SH_PATCH/g"
+    cat hex-section.txt | grep -oE $SH_MATCH | sed "s/$SH_MATCH/$SH_PATCH/g"
+    echo "SECTION_HDR: $SH_MATCH -> $SH_PATCH"
     sed -i "s|$SH_MATCH|$SH_PATCH|g" target
     i=$((i+1))
 done
 
-rm target.hex
+rm hex-section.txt
 
 # Dump ELF data of final file and diff
 ${PFX}readelf -a target > re-target_pst.txt
-diff -ur re-target_pre.txt re-target_pst.txt
+diff -ur re-target_pre.txt re-target_pst.txt > re-diff.txt
 
 # Print obj data of final file
-echo "==== target objdump start ===="
-${PFX}objdump -d target
-echo "==== target objdump end ===="
+${PFX}objdump -d target > od-target.txt

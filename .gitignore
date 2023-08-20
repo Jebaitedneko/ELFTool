@@ -1,4 +1,5 @@
 re-*.txt
+od-*.txt
 target.c
 target
 target_*
@@ -6,5 +7,6 @@ target.text
 patch.S
 patch.o
 patch.text
-dyn.hex
-sym.hex
+hex-dyn.txt
+hex-sym.txt
+hex-section.txt
