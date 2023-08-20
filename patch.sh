@@ -1,14 +1,17 @@
 #!/bin/bash
 
-PFX=aarch64-linux-gnu-
-PFX=
+PFX=$1
 
 # Prepare Target Binary
 cat << EOF > target.c
 #include <stdio.h>
 int main(){int a=0;asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");printf("%d\n",a);return 0;}
 EOF
-${PFX}gcc target.c -o target -g -Wall && rm target.c
+if [ ${#2} -gt 1 ]; then
+    echo custom target binary
+else
+    ${PFX}gcc target.c -o target -g -Wall && rm target.c
+fi
 
 # Dump .text section from Target
 ${PFX}objcopy --dump-section .text=target.text target
