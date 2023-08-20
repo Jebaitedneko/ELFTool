@@ -324,6 +324,62 @@ function patch_symtab_and_dynamic_sections() {
         DYNSYM_OLDHX=$(echo $DYNSYM_OLDHX | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
         sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
     fi
+
+    START_SEC=$(cat hex-dynsym.txt | grep -oE "^.{,12}1100.{,32}$" | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n1 | tail -n1 | tac -rs .. | tr -d '\n') # __start_section
+    STOPS_SEC=$(cat hex-dynsym.txt | grep -oE "^.{,12}1100.{,32}$" | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n2 | tail -n1 | tac -rs .. | tr -d '\n') # __stop_section
+    echo "START_SEC: $START_SEC"
+    echo "STOPS_SEC: $STOPS_SEC"
+    DELTA=$(printf %x $((0x$STOPS_SEC-0x$START_SEC)))
+    echo "DELTA: $DELTA"
+
+    STOP_ADDR=$(printf %x $(($(echo $2 | tac -rs .. | tr -d '\n' | sed "s/^/0x/g")+0x$DELTA)))
+    if [ $((${#STOP_ADDR}%2)) -ne 0 ]; then
+        STOP_ADDR=$( echo $STOP_ADDR | sed "s/^/0/g" )
+    fi
+    if [ ${#STOP_ADDR} -le 2 ]; then
+        STOP_ADDR=$( echo $STOP_ADDR | sed "s/^/00/g" )
+    fi
+    if [ ${#STOP_ADDR} -le 4 ]; then
+        STOP_ADDR=$( echo $STOP_ADDR | sed "s/^/00/g" )
+    fi
+    if [ ${#STOP_ADDR} -le 6 ]; then
+        STOP_ADDR=$( echo $STOP_ADDR | sed "s/^/00/g" )
+    fi
+    if [ ${#STOP_ADDR} -lt 8 ]; then
+        STOP_ADDR=$( echo $STOP_ADDR | sed "s/^/00/g" )
+    fi
+
+    NEW_ADDR=$(printf %x $((0x$STOP_ADDR+0x$DELTA)))
+    if [ $((${#NEW_ADDR}%2)) -ne 0 ]; then
+        NEW_ADDR=$( echo $NEW_ADDR | sed "s/^/0/g" )
+    fi
+    if [ ${#NEW_ADDR} -le 2 ]; then
+        NEW_ADDR=$( echo $NEW_ADDR | sed "s/^/00/g" )
+    fi
+    if [ ${#NEW_ADDR} -le 4 ]; then
+        NEW_ADDR=$( echo $NEW_ADDR | sed "s/^/00/g" )
+    fi
+    if [ ${#NEW_ADDR} -le 6 ]; then
+        NEW_ADDR=$( echo $NEW_ADDR | sed "s/^/00/g" )
+    fi
+    if [ ${#NEW_ADDR} -lt 8 ]; then
+        NEW_ADDR=$( echo $NEW_ADDR | sed "s/^/00/g" )
+    fi
+    STOP_ADDR=$(echo $STOP_ADDR | tac -rs .. | tr -d '\n')
+    NEW_ADDR=$(echo $NEW_ADDR | tac -rs .. | tr -d '\n')
+    echo "STOP_ADDR: $STOP_ADDR"
+    echo "NEW_ADDR : $NEW_ADDR"
+
+    DYNSYM_OLDHX=$(xxd -s $(printf %d $DYNSYM_ADDR) -l $(printf %d $DYNSYM_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" | grep -oE ".{,12}${3}${STOP_ADDR}.{,24}")
+    if [ ${#DYNSYM_OLDHX} -gt 2 ]; then
+        echo "| patching __stop_symbol"
+        DYNSYM_PATCH=$(echo $DYNSYM_OLDHX | sed "s/${STOP_ADDR}/${NEW_ADDR}/g")
+        echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
+        echo "| DYNSYM_PATCH: $DYNSYM_PATCH"
+        DYNSYM_PATCH=$(echo $DYNSYM_PATCH | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        DYNSYM_OLDHX=$(echo $DYNSYM_OLDHX | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
+    fi
 }
 
 # Update .text section with new .text data
