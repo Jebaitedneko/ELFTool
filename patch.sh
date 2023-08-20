@@ -303,6 +303,27 @@ function patch_symtab_and_dynamic_sections() {
         SYM_OLDHX=$(echo $SYM_OLDHX | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
         sed -i "s|$SYM_OLDHX|$SYM_PATCH|g" target
     fi
+
+    # Compute .dynsym section address and offset
+    if [[ $COMPILER =~ "clang" ]]; then
+        SIZE_SELECT=7
+    else
+        SIZE_SELECT=8
+    fi
+    DYNSYM_ADDR=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynsym" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+    DYNSYM_SIZE=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynsym" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n ${SIZE_SELECT}p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
+    echo "| Dynsym Section at $DYNSYM_ADDR of size $DYNSYM_SIZE"
+    xxd -s $(printf %d $DYNSYM_ADDR) -l $(printf %d $DYNSYM_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE [0-9a-f]{48} > hex-dynsym.txt
+
+    DYNSYM_OLDHX=$(xxd -s $(printf %d $DYNSYM_ADDR) -l $(printf %d $DYNSYM_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" | grep -oE ".{,12}${3}${1}.{,24}")
+    if [ ${#DYNSYM_OLDHX} -gt 2 ]; then
+        DYNSYM_PATCH=$(echo $DYNSYM_OLDHX | sed "s/$1/$2/g")
+        echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
+        echo "| DYNSYM_PATCH: $DYNSYM_PATCH"
+        DYNSYM_PATCH=$(echo $DYNSYM_PATCH | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        DYNSYM_OLDHX=$(echo $DYNSYM_OLDHX | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
+    fi
 }
 
 # Update .text section with new .text data
