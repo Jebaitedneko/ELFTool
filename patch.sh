@@ -12,9 +12,9 @@ if [ ${#2} -gt 1 ]; then
     echo
 else
     if [[ ${PFX} =~ "llvm" ]]; then
-        ${CC_PFX}clang target.c -o target -g -Wall && rm target.c
+        clang target.c -o target -g -Wall && rm target.c
     else
-        aarch64-linux-gnu-gcc target.c -o target -g -Wall && rm target.c
+        ${PFX}gcc target.c -o target -g -Wall && rm target.c
     fi
 fi
 
