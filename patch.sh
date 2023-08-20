@@ -1,21 +1,26 @@
 #!/bin/bash
 
-PFX=$1
+COMPILER=$1 # clang gcc
+ARCH=$2 # x86_64 aarch64
+
+if [[ $COMPILER =~ "clang" ]]; then
+    PFX=${COMPILER/clang/llvm-}
+fi
+
+if [[ $COMPILER =~ "gcc" ]]; then
+    PFX=${COMPILER/gcc/}
+fi
 
 # Prepare Target Binary
 cat << EOF > target.c
 #include <stdio.h>
 int main(){int a=0;asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");printf("%d\n",a);return 0;}
 EOF
-if [ ${#2} -gt 1 ]; then
+if [ ${#3} -gt 1 ]; then
     echo Custom target binary
     echo
 else
-    if [[ ${PFX} =~ "llvm" ]]; then
-        clang target.c -o target -g -Wall && rm target.c
-    else
-        ${PFX}gcc target.c -o target -g -Wall && rm target.c
-    fi
+    $COMPILER target.c -o target -g -Wall && rm target.c
 fi
 
 # Dump .text section from Target
@@ -42,7 +47,7 @@ ${PFX}readelf -a target > re-target_pre.txt
 # Print obj data of initial target file
 ${PFX}objdump -d target > od-target-initial.txt
 
-if [[ ${PFX} =~ "aarch64" || ${PFX} =~ "llvm" ]]; then
+if [[ $ARCH =~ "aarch64" ]]; then
 # Prepare Patch Code
 cat << EOF > patch.S
 .section .text
@@ -72,8 +77,8 @@ __patch:
 .size __patch, .-__patch
 EOF
 fi
-if [[ ${PFX} =~ "llvm" ]]; then
-    # ${CC_PFX}clang -c patch.S -o patch.o && rm patch.S
+if [[ $COMPILER =~ "clang" ]]; then
+    # $COMPILER -c patch.S -o patch.o && rm patch.S
     aarch64-linux-gnu-as -c patch.S -o patch.o && rm patch.S
 else
     ${PFX}as -c patch.S -o patch.o && rm patch.S
@@ -121,7 +126,7 @@ echo "| TARGET_TEXT_SZ_PATCHED: $TARGET_TEXT_SZ_PATCHED"
 echo "-------------------------------------------------------"
 echo
 
-if [[ ${PFX} =~ "llvm" ]]; then
+if [[ $COMPILER =~ "clang" ]]; then
 
     TXT_ADDR=$(${PFX}readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n')
     if [ $((${#TXT_ADDR}%2)) -ne 0 ]; then
@@ -162,7 +167,7 @@ ${PFX}objcopy --update-section .text=target.text target target.temp &> objcopy-o
 S_CNT=$(cat objcopy-out.txt | wc -l)
 S_DATA=$(cat objcopy-out.txt | cut -f3 -d: | sed "s/.*section //g;s/lma //g;s/adjusted to //g;s/\n/ /g;s/ /\n/g")
 
-if [[ ${PFX} =~ "llvm" ]]; then
+if [[ $COMPILER =~ "clang" ]]; then
     aarch64-linux-gnu-objcopy --update-section .text=target.text target target.temp &> objcopy-out.txt && rm target.temp
     S_CNT=$(cat objcopy-out.txt | wc -l)
     S_DATA=$(cat objcopy-out.txt | cut -f3 -d: | sed "s/.*section //g;s/lma //g;s/adjusted to //g;s/\n/ /g;s/ /\n/g")
@@ -258,7 +263,7 @@ function patch_symtab_and_dynamic_sections() {
     echo "| MATCH ADDR: ${5}${4}${3}${1} SHIFT: $1 (LE) -> $2 (LE) SECTION ID: $3 (LE)"
 
     # Compute .dynamic section address and offset
-    if [[ ${PFX} =~ "llvm" ]]; then
+    if [[ $COMPILER =~ "clang" ]]; then
         SIZE_SELECT=7
     else
         SIZE_SELECT=8
@@ -279,7 +284,7 @@ function patch_symtab_and_dynamic_sections() {
     fi
 
     # Compute .symtab section address and offset
-    if [[ ${PFX} =~ "llvm" ]]; then
+    if [[ $COMPILER =~ "clang" ]]; then
         SIZE_SELECT=7
     else
         SIZE_SELECT=8
@@ -346,7 +351,7 @@ while [ $i -lt $S_CNT ]; do
         echo "| FUZZY_END_HEX_SZ: ${#FUZZY_END_HEX}"
         SH_MATCH=$(echo "$(echo $SH_OLD_HEX | grep -oE "^[0-9a-f]{16}")$FUZZY_END_HEX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
         SH_PATCH=$(echo "${FUZZY_END_HEX}00000000${FUZZY_END_HEX}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-        if [[ ${PFX} =~ "llvm" ]]; then
+        if [[ $COMPILER =~ "clang" ]]; then
             SH_PATCH=$(echo "${S_NEW_ADDR}00000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
         fi
     else
