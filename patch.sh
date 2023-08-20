@@ -21,6 +21,9 @@ echo "TARGET_TEXT_SZ_ORIG: $TARGET_TEXT_SZ_ORIG"
 # Dump ELF data from Target
 ${PFX}readelf -a target > re-target_pre.txt
 
+# Print obj data of initial target file
+${PFX}objdump -d target > od-target-initial.txt
+
 if [ ${#PFX} -gt 1 ]; then
 # Prepare Patch Code
 cat << EOF > patch.S
@@ -222,4 +225,4 @@ ${PFX}readelf -a target > re-target_pst.txt
 diff -ur re-target_pre.txt re-target_pst.txt > re-diff.txt
 
 # Print obj data of final file
-${PFX}objdump -d target > od-target.txt
+${PFX}objdump -d target > od-target-final.txt
