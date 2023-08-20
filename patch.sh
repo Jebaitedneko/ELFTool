@@ -144,14 +144,14 @@ if [[ ${PFX} =~ "llvm" ]]; then
     TARGET_TEXT_SZ_PATCHED_LE=$(echo "${TARGET_TEXT_SZ_PATCHED}" | tac -rs .. | echo "$(tr -d '\n')")
     echo "TARGET_TEXT_SZ_PATCHED_LE: $TARGET_TEXT_SZ_PATCHED_LE"
     echo
-    # 00b002 0000000000 00b002 0000000000 f80005
+    # 00b00200 00000000 00b00200 00000000 f8000500
     xxd -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > hex-target.txt
-    TXT_MATCH=$(cat hex-target.txt | grep -oE "${TXT_ADDR_LE}0000000000${TXT_ADDR_LE}0000000000${TARGET_TEXT_SZ_ORIG_LE}" | head -n1 | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-    TXT_PATCH=$(echo "${TXT_ADDR_LE}0000000000${TXT_ADDR_LE}0000000000${TARGET_TEXT_SZ_PATCHED_LE}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    TXT_MATCH=$(cat hex-target.txt | grep -oE "${TXT_ADDR_LE}00000000${TXT_ADDR_LE}00000000${TARGET_TEXT_SZ_ORIG_LE}" | head -n1 | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    TXT_PATCH=$(echo "${TXT_ADDR_LE}00000000${TXT_ADDR_LE}00000000${TARGET_TEXT_SZ_PATCHED_LE}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
     echo "TXT_MATCH: $TXT_MATCH"
     echo "TXT_PATCH: $TXT_PATCH"
     sed -i "s|$TXT_MATCH|$TXT_PATCH|g" target
-    rm hex-target.txt
+    # rm hex-target.txt
     echo
 
 fi
@@ -303,7 +303,8 @@ function patch_symtab_and_dynamic_sections() {
 ${PFX}objcopy --update-section .text=target.text target target_patch && mv target_patch target && rm target.text
 
 # Add our new function in Patch to the symtab
-${PFX}objcopy --add-symbol __patch=".text:${TARGET_TEXT_SZ_ORIG},global,function" target target_patch && mv target_patch target
+TARGET_TEXT_SZ_ORIG_HEX=$(echo $TARGET_TEXT_SZ_ORIG | sed "s/^/0x/g")
+${PFX}objcopy --add-symbol __patch=".text:${TARGET_TEXT_SZ_ORIG_HEX},global,function" target target_patch && mv target_patch target
 
 i=0
 while [ $i -lt $S_CNT ]; do
