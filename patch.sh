@@ -130,7 +130,6 @@ if [[ $COMPILER =~ "clang" ]]; then
     TARGET_TEXT_SZ_PATCHED_LE=$(echo "${TARGET_TEXT_SZ_PATCHED}" | tac -rs .. | tr -d '\n')
     echo "TARGET_TEXT_SZ_PATCHED_LE: $TARGET_TEXT_SZ_PATCHED_LE"
     echo
-    # 00b00200 00000000 00b00200 00000000 f8000500
     xxd -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > hex-target.txt
     TXT_MATCH=$(grep -oE "${TXT_ADDR_LE}00000000${TXT_ADDR_LE}00000000${TARGET_TEXT_SZ_ORIG_LE}" hex-target.txt | head -n1 | rawhex_to_escaped_hex)
     TXT_PATCH=$(echo "${TXT_ADDR_LE}00000000${TXT_ADDR_LE}00000000${TARGET_TEXT_SZ_PATCHED_LE}" | rawhex_to_escaped_hex)
@@ -218,7 +217,7 @@ function patch_symtab_and_dynamic_sections() {
     echo "| Dynamic Section at $DYN_ADDR of size $DYN_SIZE"
     xxd -s "$(printf %d "$DYN_ADDR")" -l "$(printf %d "$DYN_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{32}" > hex-dyn.txt
 
-    DYN_OLDHX=$(xxd -s "$(printf %d "$DYN_ADDR")" -l "$(printf %d "$DYN_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{32}" | grep -oE ".{,16}$1.{,12}")
+    DYN_OLDHX=$(grep -oE ".{,16}$1.{,12}" hex-dyn.txt)
     if [ ${#DYN_OLDHX} -gt 2 ]; then
         DYN_PATCH=${DYN_OLDHX/$1/$2}
         echo "| DYN_OLDHX: $DYN_OLDHX"
@@ -237,9 +236,9 @@ function patch_symtab_and_dynamic_sections() {
     SYM_ADDR=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .symtab" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
     SYM_SIZE=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .symtab" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n ${SIZE_SELECT}p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
     echo "| Symtab Section at $SYM_ADDR of size $SYM_SIZE"
-    xxd -s "$(printf %d "$SYM_ADDR")" -l "$(printf %d "$SYM_ADDR")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" > hex-sym.txt
+    xxd -s "$(printf %d "$SYM_ADDR")" -l "$(printf %d "$SYM_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" > hex-sym.txt
 
-    SYM_OLDHX=$(xxd -s "$(printf %d "$SYM_ADDR")" -l "$(printf %d "$SYM_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" | grep -oE ".{,8}${5}${4}${3}${1}.{,16}")
+    SYM_OLDHX=$(grep -oE ".{,8}${5}${4}${3}${1}.{,16}" hex-sym.txt)
     if [ ${#SYM_OLDHX} -gt 2 ]; then
         SYM_PATCH=${SYM_OLDHX/$1/$2}
         echo "| SYM_OLDHX: $SYM_OLDHX"
@@ -260,7 +259,7 @@ function patch_symtab_and_dynamic_sections() {
     echo "| Dynsym Section at $DYNSYM_ADDR of size $DYNSYM_SIZE"
     xxd -s "$(printf %d "$DYNSYM_ADDR")" -l "$(printf %d "$DYNSYM_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" > hex-dynsym.txt
 
-    DYNSYM_OLDHX=$(xxd -s "$(printf %d "$DYNSYM_ADDR")" -l "$(printf %d "$DYNSYM_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" | grep -oE ".{,12}${3}${1}.{,24}")
+    DYNSYM_OLDHX=$(grep -oE ".{,12}${3}${1}.{,24}" hex-dynsym.txt)
     if [ ${#DYNSYM_OLDHX} -gt 2 ]; then
         DYNSYM_PATCH=${DYNSYM_OLDHX/$1/$2}
         echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
@@ -288,7 +287,7 @@ function patch_symtab_and_dynamic_sections() {
     echo "| STOP_ADDR: $STOP_ADDR"
     echo "| NEW_ADDR:  $NEW_ADDR"
 
-    DYNSYM_OLDHX=$(xxd -s "$(printf %d "$DYNSYM_ADDR")" -l "$(printf %d "$DYNSYM_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" | grep -oE ".{,12}${3}${STOP_ADDR}.{,24}")
+    DYNSYM_OLDHX=$(grep -oE ".{,12}${3}${STOP_ADDR}.{,24}" hex-dynsym.txt)
     if [ ${#DYNSYM_OLDHX} -gt 2 ]; then
         echo "| patching __stop_symbol"
         DYNSYM_PATCH=${DYNSYM_OLDHX/${STOP_ADDR}/${NEW_ADDR}}
@@ -338,7 +337,6 @@ while [ $i -lt "$S_CNT" ]; do
     S_NEW_ADDR=$(echo "${ADDRS_NEW[$i]}" | tac -rs .. | tr -d '\n')
     echo "| S_OLD_ADDR: $S_OLD_ADDR"
     echo "| S_NEW_ADDR: $S_NEW_ADDR"
-    # 00b10700 00000000 00b10700
     SH_OLD_HEX=${S_OLD_ADDR}"00000000"${S_NEW_ADDR}
     FUZZY_END_HEX=$(grep -oE "${S_OLD_ADDR}00000000[0-9a-f]{8}" hex-section.txt | grep -oE "[0-9a-f]{8}$")
     if [ ${#FUZZY_END_HEX} -gt 0 ]; then
