@@ -327,10 +327,10 @@ function patch_symtab_and_dynamic_sections() {
 
     START_SEC=$(cat hex-dynsym.txt | grep -oE "^.{,12}1100.{,32}$" | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n1 | tail -n1 | tac -rs .. | tr -d '\n') # __start_section
     STOPS_SEC=$(cat hex-dynsym.txt | grep -oE "^.{,12}1100.{,32}$" | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n2 | tail -n1 | tac -rs .. | tr -d '\n') # __stop_section
-    echo "START_SEC: $START_SEC"
-    echo "STOPS_SEC: $STOPS_SEC"
+    echo "| START_SEC: $START_SEC"
+    echo "| STOPS_SEC: $STOPS_SEC"
     DELTA=$(printf %x $((0x$STOPS_SEC-0x$START_SEC)))
-    echo "DELTA: $DELTA"
+    echo "| DELTA: $DELTA"
 
     STOP_ADDR=$(printf %x $(($(echo $2 | tac -rs .. | tr -d '\n' | sed "s/^/0x/g")+0x$DELTA)))
     if [ $((${#STOP_ADDR}%2)) -ne 0 ]; then
@@ -367,8 +367,8 @@ function patch_symtab_and_dynamic_sections() {
     fi
     STOP_ADDR=$(echo $STOP_ADDR | tac -rs .. | tr -d '\n')
     NEW_ADDR=$(echo $NEW_ADDR | tac -rs .. | tr -d '\n')
-    echo "STOP_ADDR: $STOP_ADDR"
-    echo "NEW_ADDR : $NEW_ADDR"
+    echo "| STOP_ADDR: $STOP_ADDR"
+    echo "| NEW_ADDR:  $NEW_ADDR"
 
     DYNSYM_OLDHX=$(xxd -s $(printf %d $DYNSYM_ADDR) -l $(printf %d $DYNSYM_SIZE) -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" | grep -oE ".{,12}${3}${STOP_ADDR}.{,24}")
     if [ ${#DYNSYM_OLDHX} -gt 2 ]; then
