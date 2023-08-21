@@ -94,12 +94,7 @@ __patch:
 .size __patch, .-__patch
 EOF
 fi
-if [[ $COMPILER =~ "clang" ]]; then
-    # $COMPILER -c patch.S -o patch.o && rm patch.S
-    aarch64-linux-gnu-as -c patch.S -o patch.o && rm patch.S
-else
-    "${PFX}"as -c patch.S -o patch.o && rm patch.S
-fi
+$COMPILER -c patch.S -o patch.o && rm patch.S
 
 # Dump ELF data from Patch
 "${PFX}"readelf -a patch.o > re-patch.txt
@@ -146,15 +141,15 @@ if [[ $COMPILER =~ "clang" ]]; then
 fi
 
 # [PRE-RUN] Update .text section with new .text data
-"${PFX}"objcopy --update-section .text=target.text target target.temp &> objcopy-out.txt && rm target.temp
+# llvm-objcopy doesn't emit the verbose data that we need, so prefer gnu objcopy during this step
+if [[ $COMPILER =~ "clang" && $ARCH =~ "aarch64" ]]; then
+    ALT_PFX=aarch64-linux-gnu-
+else
+    ALT_PFX="$PFX"
+fi
+"$ALT_PFX"objcopy --update-section .text=target.text target target.temp &> objcopy-out.txt && rm target.temp
 S_CNT=$(wc -l < objcopy-out.txt)
 S_DATA=$(cut -f3 -d: objcopy-out.txt | sed "s/.*section //g;s/lma //g;s/adjusted to //g;s/\n/ /g;s/ /\n/g")
-
-if [[ $COMPILER =~ "clang" ]]; then
-    aarch64-linux-gnu-objcopy --update-section .text=target.text target target.temp &> objcopy-out.txt && rm target.temp
-    S_CNT=$(wc -l < objcopy-out.txt)
-    S_DATA=$(cut -f3 -d: objcopy-out.txt | sed "s/.*section //g;s/lma //g;s/adjusted to //g;s/\n/ /g;s/ /\n/g")
-fi
 rm objcopy-out.txt
 
 i=0
