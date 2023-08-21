@@ -4,11 +4,15 @@ COMPILER=$1 # clang gcc
 ARCH=$2 # x86_64 aarch64
 
 if [[ $COMPILER =~ "clang" ]]; then
-    PFX=${COMPILER/clang/llvm-}
+    PFX=$(echo "$COMPILER" | sed "s/clang$/llvm-/g")
 fi
 
 if [[ $COMPILER =~ "gcc" ]]; then
-    PFX=${COMPILER/gcc/}
+    PFX=$(echo "$COMPILER" | sed "s/gcc$//g")
+fi
+
+if [[ $ARCH =~ "aarch64" ]]; then
+    COMPILER="${COMPILER} -target aarch64"
 fi
 
 function pad_variable_to_size() {
@@ -198,12 +202,8 @@ echo
 # Patch .dynamic and .symtab sections of section following .text
 function patch_symtab_and_dynamic_sections() {
 
-    echo "| S_OLD_ADDR: $1"
-    echo "| S_NEW_ADDR: $2"
-    echo "| SECTION_IDS_LE_HEXES[i]: $3"
     echo "| ST_OTHER: $4"
     echo "| ST_INFO: $5"
-    echo "| MATCH ADDR: ${5}${4}${3}${1} SHIFT: $1 (LE) -> $2 (LE) SECTION ID: $3 (LE)"
 
     # Compute .dynamic section address and offset
     if [[ $COMPILER =~ "clang" ]]; then
@@ -269,8 +269,8 @@ function patch_symtab_and_dynamic_sections() {
     fi
 
      # __start_section and __stop_section
-    START_SEC=$(grep -oE "^.{,12}1100.{,32}$" hex-dynsym.txt | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n1 | tail -n1 | change_endianness)
-    STOPS_SEC=$(grep -oE "^.{,12}1100.{,32}$" hex-dynsym.txt | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n2 | tail -n1 | change_endianness)
+    START_SEC=$(grep -oE "^.{,12}${3}.{,32}$" hex-dynsym.txt | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n1 | tail -n1 | change_endianness)
+    STOPS_SEC=$(grep -oE "^.{,12}${3}.{,32}$" hex-dynsym.txt | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n2 | tail -n1 | change_endianness)
     echo "| START_SEC: $START_SEC"
     echo "| STOPS_SEC: $STOPS_SEC"
     DELTA=$(printf %x $((0x$STOPS_SEC-0x$START_SEC)))
@@ -310,11 +310,14 @@ i=0
 while [ $i -lt "$S_CNT" ]; do
     echo
     echo "+ SYMTAB + DYNAMIC PATCHING"
-    echo "| SECTIONS: ${SECTIONS[$i]}"
     # Compute the new addr of section after .text and patch it's symtab and dynamic addresses
     # These are 16 bytes everywhere.
     S_OLD_ADDR=$(echo "${ADDRS_OLD[$i]}" | change_endianness)
     S_NEW_ADDR=$(echo "${ADDRS_NEW[$i]}" | change_endianness)
+    echo "| SECTIONS: ${SECTIONS[$i]}"
+    echo "| S_OLD_ADDR: $S_OLD_ADDR"
+    echo "| S_NEW_ADDR: $S_NEW_ADDR"
+    echo "| SECTION_IDS_LE_HEXES[i]: ${SECTION_IDS_LE_HEXES[$i]}"
     echo "|-> LOCAL | DEFAULT"
     patch_symtab_and_dynamic_sections "$S_OLD_ADDR" "$S_NEW_ADDR" "${SECTION_IDS_LE_HEXES[$i]}" "00" "03" # LOCAL  DEFAULT
     echo "|-> GLOBAL | HIDDEN"
