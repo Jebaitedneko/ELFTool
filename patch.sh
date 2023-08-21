@@ -179,7 +179,7 @@ echo "| ADDRS_NEW: ${ADDRS_NEW[*]}"
 
 SECTION_IDS=()
 for section in "${SECTIONS[@]}"; do
-    PATCH_SECTION=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f]{2}\] ${section}$| \[[0-9a-f]{2}\] ${section/^./_}$" | grep -oE "\[.*\]" | sed "s/\[//g;s/\]//g" | tr -d '\n')
+    PATCH_SECTION=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f]{2}\] ${section}$" | grep -oE "\[.*\]" | sed "s/\[//g;s/\]//g" | tr -d '\n')
     SECTION_IDS+=( "$PATCH_SECTION" )
 done
 echo "| SECTION_IDS: ${SECTION_IDS[*]}"
