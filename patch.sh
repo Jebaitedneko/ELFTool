@@ -30,6 +30,10 @@ function pad_variable_to_size() {
     echo "$temp"
 }
 
+function rawhex_to_escaped_hex() {
+    sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g"
+}
+
 # Prepare Target Binary
 cat << EOF > target.c
 #include <stdio.h>
@@ -127,8 +131,8 @@ if [[ $COMPILER =~ "clang" ]]; then
     echo
     # 00b00200 00000000 00b00200 00000000 f8000500
     xxd -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > hex-target.txt
-    TXT_MATCH=$(grep -oE "${TXT_ADDR_LE}00000000${TXT_ADDR_LE}00000000${TARGET_TEXT_SZ_ORIG_LE}" hex-target.txt | head -n1 | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-    TXT_PATCH=$(echo "${TXT_ADDR_LE}00000000${TXT_ADDR_LE}00000000${TARGET_TEXT_SZ_PATCHED_LE}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+    TXT_MATCH=$(grep -oE "${TXT_ADDR_LE}00000000${TXT_ADDR_LE}00000000${TARGET_TEXT_SZ_ORIG_LE}" hex-target.txt | head -n1 | rawhex_to_escaped_hex)
+    TXT_PATCH=$(echo "${TXT_ADDR_LE}00000000${TXT_ADDR_LE}00000000${TARGET_TEXT_SZ_PATCHED_LE}" | rawhex_to_escaped_hex)
     echo "TXT_MATCH: $TXT_MATCH"
     echo "TXT_PATCH: $TXT_PATCH"
     sed -i "s|$TXT_MATCH|$TXT_PATCH|g" target
@@ -218,8 +222,8 @@ function patch_symtab_and_dynamic_sections() {
         DYN_PATCH=${DYN_OLDHX/$1/$2}
         echo "| DYN_OLDHX: $DYN_OLDHX"
         echo "| DYN_PATCH: $DYN_PATCH"
-        DYN_PATCH=$(echo "$DYN_PATCH" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-        DYN_OLDHX=$(echo "$DYN_OLDHX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        DYN_PATCH=$(echo "$DYN_PATCH" | rawhex_to_escaped_hex)
+        DYN_OLDHX=$(echo "$DYN_OLDHX" | rawhex_to_escaped_hex)
         sed -i "s|$DYN_OLDHX|$DYN_PATCH|g" target
     fi
 
@@ -239,8 +243,8 @@ function patch_symtab_and_dynamic_sections() {
         SYM_PATCH=${SYM_OLDHX/$1/$2}
         echo "| SYM_OLDHX: $SYM_OLDHX"
         echo "| SYM_PATCH: $SYM_PATCH"
-        SYM_PATCH=$(echo "$SYM_PATCH" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-        SYM_OLDHX=$(echo "$SYM_OLDHX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        SYM_PATCH=$(echo "$SYM_PATCH" | rawhex_to_escaped_hex)
+        SYM_OLDHX=$(echo "$SYM_OLDHX" | rawhex_to_escaped_hex)
         sed -i "s|$SYM_OLDHX|$SYM_PATCH|g" target
     fi
 
@@ -260,8 +264,8 @@ function patch_symtab_and_dynamic_sections() {
         DYNSYM_PATCH=${DYNSYM_OLDHX/$1/$2}
         echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
         echo "| DYNSYM_PATCH: $DYNSYM_PATCH"
-        DYNSYM_PATCH=$(echo "$DYNSYM_PATCH" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-        DYNSYM_OLDHX=$(echo "$DYNSYM_OLDHX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        DYNSYM_PATCH=$(echo "$DYNSYM_PATCH" | rawhex_to_escaped_hex)
+        DYNSYM_OLDHX=$(echo "$DYNSYM_OLDHX" | rawhex_to_escaped_hex)
         sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
     fi
 
@@ -289,8 +293,8 @@ function patch_symtab_and_dynamic_sections() {
         DYNSYM_PATCH=${DYNSYM_OLDHX/${STOP_ADDR}/${NEW_ADDR}}
         echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
         echo "| DYNSYM_PATCH: $DYNSYM_PATCH"
-        DYNSYM_PATCH=$(echo "$DYNSYM_PATCH" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-        DYNSYM_OLDHX=$(echo "$DYNSYM_OLDHX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        DYNSYM_PATCH=$(echo "$DYNSYM_PATCH" | rawhex_to_escaped_hex)
+        DYNSYM_OLDHX=$(echo "$DYNSYM_OLDHX" | rawhex_to_escaped_hex)
         sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
     fi
 }
@@ -299,7 +303,7 @@ function patch_symtab_and_dynamic_sections() {
 "${PFX}"objcopy --update-section .text=target.text target target_patch && mv target_patch target && rm target.text
 
 # Add our new function in Patch to the symtab
-TARGET_TEXT_SZ_ORIG_HEX=$(echo $TARGET_TEXT_SZ_ORIG | sed "s/^/0x/g")
+TARGET_TEXT_SZ_ORIG_HEX=$(echo "$TARGET_TEXT_SZ_ORIG" | sed "s/^/0x/g")
 "${PFX}"objcopy --add-symbol __patch=".text:${TARGET_TEXT_SZ_ORIG_HEX},global,function" target target_patch && mv target_patch target
 
 i=0
@@ -339,14 +343,14 @@ while [ $i -lt "$S_CNT" ]; do
     if [ ${#FUZZY_END_HEX} -gt 0 ]; then
         echo "| FUZZY_END_HEX: ${FUZZY_END_HEX}"
         echo "| FUZZY_END_HEX_SZ: ${#FUZZY_END_HEX}"
-        SH_MATCH=$(echo "$(echo "$SH_OLD_HEX" | grep -oE "^[0-9a-f]{16}")$FUZZY_END_HEX" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-        SH_PATCH=$(echo "${FUZZY_END_HEX}00000000${FUZZY_END_HEX}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        SH_MATCH=$(echo "$(echo "$SH_OLD_HEX" | grep -oE "^[0-9a-f]{16}")$FUZZY_END_HEX" | rawhex_to_escaped_hex)
+        SH_PATCH=$(echo "${FUZZY_END_HEX}00000000${FUZZY_END_HEX}" | rawhex_to_escaped_hex)
         if [[ $COMPILER =~ "clang" ]]; then
-            SH_PATCH=$(echo "${S_NEW_ADDR}00000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+            SH_PATCH=$(echo "${S_NEW_ADDR}00000000${S_NEW_ADDR}" | rawhex_to_escaped_hex)
         fi
     else
-        SH_MATCH=$(echo "${S_OLD_ADDR}00000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
-        SH_PATCH=$(echo "${S_NEW_ADDR}00000000${S_NEW_ADDR}" | sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g")
+        SH_MATCH=$(echo "${S_OLD_ADDR}00000000${S_NEW_ADDR}" | rawhex_to_escaped_hex)
+        SH_PATCH=$(echo "${S_NEW_ADDR}00000000${S_NEW_ADDR}" | rawhex_to_escaped_hex)
     fi
     echo "| SH_MATCH: $SH_MATCH"
     echo "| SH_PATCH: $SH_PATCH"
