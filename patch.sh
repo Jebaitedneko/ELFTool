@@ -37,7 +37,8 @@ function rawhex_to_escaped_hex() {
 # Prepare Target Binary
 cat << EOF > target.c
 #include <stdio.h>
-int main(){int a=0;asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");asm("nop");printf("%d\n",a);return 0;}
+#define ASM asm volatile
+int main(){int a=0;ASM("nop");ASM("nop");ASM("nop");ASM("nop");ASM("nop");ASM("nop");ASM("nop");ASM("nop");printf("%d\n",a);return 0;}
 EOF
 if [ ${#3} -gt 1 ]; then
     echo Custom target binary
