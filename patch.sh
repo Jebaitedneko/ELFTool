@@ -150,6 +150,8 @@ fi
 # llvm-objcopy doesn't emit the verbose data that we need, so prefer gnu objcopy during this step
 if [[ $COMPILER =~ "clang" && $ARCH =~ "aarch64" ]]; then
     ALT_PFX=aarch64-linux-gnu-
+elif [[ $COMPILER =~ "clang" && $ARCH =~ "x86_64" ]]; then
+    ALT_PFX=""
 else
     ALT_PFX="$PFX"
 fi
