@@ -11,8 +11,8 @@ if [[ $COMPILER =~ "gcc" ]]; then
     PFX=$(echo "$COMPILER" | sed "s/gcc$//g")
 fi
 
-if [[ $ARCH =~ "aarch64" ]]; then
-    COMPILER="${COMPILER} -target aarch64"
+if [[ $ARCH =~ "aarch64" && $COMPILER =~ "clang" ]]; then
+    COMPILER="${COMPILER} --target=aarch64-linux-gnu -fuse-ld=lld"
 fi
 
 function pad_variable_to_size() {
@@ -53,6 +53,7 @@ if [ ${#3} -gt 1 ]; then
     echo
 else
     $COMPILER target.c -o target -g -Wall && rm target.c
+    [[ $? -ne 0 ]] && exit
 fi
 
 # Dump .text section from Target
@@ -99,6 +100,7 @@ __patch:
 EOF
 fi
 $COMPILER -c patch.S -o patch.o && rm patch.S
+[[ $? -ne 0 ]] && exit
 
 # Dump ELF data from Patch
 "${PFX}"readelf -a patch.o > re-patch.txt
@@ -301,10 +303,12 @@ function patch_symtab_and_dynamic_sections() {
 
 # Update .text section with new .text data
 "${PFX}"objcopy --update-section .text=target.text target target_patch && mv target_patch target && rm target.text
+[[ $? -ne 0 ]] && exit
 
 # Add our new function in Patch to the symtab
 TARGET_TEXT_SZ_ORIG_HEX=$(echo "$TARGET_TEXT_SZ_ORIG" | sed "s/^/0x/g")
 "${PFX}"objcopy --add-symbol __patch=".text:${TARGET_TEXT_SZ_ORIG_HEX},global,function" target target_patch && mv target_patch target
+[[ $? -ne 0 ]] && exit
 
 i=0
 while [ $i -lt "$S_CNT" ]; do
