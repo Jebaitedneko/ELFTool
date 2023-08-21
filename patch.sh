@@ -11,6 +11,25 @@ if [[ $COMPILER =~ "gcc" ]]; then
     PFX=${COMPILER/gcc/}
 fi
 
+function pad_variable_to_size() {
+    temp=$1
+    size=$2
+    if [ $((${#temp}%2)) -ne 0 ]; then
+        temp=$( echo "$temp" | sed "s/^/0/g" )
+    fi
+    i=2
+    while [ $i -lt "$size" ]; do
+        if [ ${#temp} -lt $i ]; then
+            temp=$( echo "$temp" | sed "s/^/00/g" )
+        fi
+        i=$((i+2))
+    done
+    if [ ${#temp} -lt "$size" ]; then
+        temp=$( echo "$temp" | sed "s/^/00/g" )
+    fi
+    echo "$temp"
+}
+
 # Prepare Target Binary
 cat << EOF > target.c
 #include <stdio.h>
@@ -26,21 +45,7 @@ fi
 # Dump .text section from Target
 "${PFX}"objcopy --dump-section .text=target.text target
 TARGET_TEXT_SZ_ORIG=$(printf %x "$(stat -c '%s' target.text)")
-if [ $((${#TARGET_TEXT_SZ_ORIG}%2)) -ne 0 ]; then
-    TARGET_TEXT_SZ_ORIG=${TARGET_TEXT_SZ_ORIG/^/0}
-fi
-if [ ${#TARGET_TEXT_SZ_ORIG} -le 2 ]; then
-    TARGET_TEXT_SZ_ORIG=${TARGET_TEXT_SZ_ORIG/^/00}
-fi
-if [ ${#TARGET_TEXT_SZ_ORIG} -le 4 ]; then
-    TARGET_TEXT_SZ_ORIG=${TARGET_TEXT_SZ_ORIG/^/00}
-fi
-if [ ${#TARGET_TEXT_SZ_ORIG} -le 6 ]; then
-    TARGET_TEXT_SZ_ORIG=${TARGET_TEXT_SZ_ORIG/^/00}
-fi
-if [ ${#TARGET_TEXT_SZ_ORIG} -lt 8 ]; then
-    TARGET_TEXT_SZ_ORIG=${TARGET_TEXT_SZ_ORIG/^/00}
-fi
+TARGET_TEXT_SZ_ORIG=$(pad_variable_to_size "$TARGET_TEXT_SZ_ORIG" 8)
 echo "-------------------------------------------------------"
 echo "| TARGET_TEXT_SZ_ORIG: $TARGET_TEXT_SZ_ORIG"
 
@@ -96,41 +101,13 @@ fi
 # Dump .text section from Patch
 "${PFX}"objcopy --dump-section .text=patch.text patch.o && rm patch.o
 PATCH_TEXT_SZ=$(printf %x "$(stat -c '%s' patch.text)")
-if [ $((${#PATCH_TEXT_SZ}%2)) -ne 0 ]; then
-    PATCH_TEXT_SZ=${PATCH_TEXT_SZ/^/0}
-fi
-if [ ${#PATCH_TEXT_SZ} -le 2 ]; then
-    PATCH_TEXT_SZ=${PATCH_TEXT_SZ/^/00}
-fi
-if [ ${#PATCH_TEXT_SZ} -le 4 ]; then
-    PATCH_TEXT_SZ=${PATCH_TEXT_SZ/^/00}
-fi
-if [ ${#PATCH_TEXT_SZ} -le 6 ]; then
-    PATCH_TEXT_SZ=${PATCH_TEXT_SZ/^/00}
-fi
-if [ ${#PATCH_TEXT_SZ} -lt 8 ]; then
-    PATCH_TEXT_SZ=${PATCH_TEXT_SZ/^/00}
-fi
+PATCH_TEXT_SZ=$(pad_variable_to_size "$PATCH_TEXT_SZ" 8)
 echo "| PATCH_TEXT_SZ: $PATCH_TEXT_SZ"
 
 # Merge .text section from Patch into Target
 cat patch.text >> target.text && rm patch.text
 TARGET_TEXT_SZ_PATCHED=$(printf %x "$(stat -c '%s' target.text)")
-if [ $((${#TARGET_TEXT_SZ_PATCHED}%2)) -ne 0 ]; then
-    TARGET_TEXT_SZ_PATCHED=${TARGET_TEXT_SZ_PATCHED/^/0}
-fi
-if [ ${#TARGET_TEXT_SZ_PATCHED} -le 2 ]; then
-    TARGET_TEXT_SZ_PATCHED=${TARGET_TEXT_SZ_PATCHED/^/00}
-fi
-if [ ${#TARGET_TEXT_SZ_PATCHED} -le 4 ]; then
-    TARGET_TEXT_SZ_PATCHED=${TARGET_TEXT_SZ_PATCHED/^/00}
-fi
-if [ ${#TARGET_TEXT_SZ_PATCHED} -le 6 ]; then
-    TARGET_TEXT_SZ_PATCHED=${TARGET_TEXT_SZ_PATCHED/^/00}
-fi
-if [ ${#TARGET_TEXT_SZ_PATCHED} -lt 8 ]; then
-    TARGET_TEXT_SZ_PATCHED=${TARGET_TEXT_SZ_PATCHED/^/00}
-fi
+TARGET_TEXT_SZ_PATCHED=$(pad_variable_to_size "$TARGET_TEXT_SZ_PATCHED" 8)
 echo "| TARGET_TEXT_SZ_PATCHED: $TARGET_TEXT_SZ_PATCHED"
 echo "-------------------------------------------------------"
 echo
@@ -138,21 +115,7 @@ echo
 if [[ $COMPILER =~ "clang" ]]; then
 
     TXT_ADDR=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n')
-    if [ $((${#TXT_ADDR}%2)) -ne 0 ]; then
-        TXT_ADDR=${TXT_ADDR/^/0}
-    fi
-    if [ ${#TXT_ADDR} -le 2 ]; then
-        TXT_ADDR=${TXT_ADDR/^/00}
-    fi
-    if [ ${#TXT_ADDR} -le 4 ]; then
-        TXT_ADDR=${TXT_ADDR/^/00}
-    fi
-    if [ ${#TXT_ADDR} -le 6 ]; then
-        TXT_ADDR=${TXT_ADDR/^/00}
-    fi
-    if [ ${#TXT_ADDR} -lt 8 ]; then
-        TXT_ADDR=${TXT_ADDR/^/00}
-    fi
+    TXT_ADDR=$(pad_variable_to_size "$TXT_ADDR" 8)
     TXT_ADDR_LE=$(echo "$TXT_ADDR" | tac -rs .. | tr -d '\n')
     echo "TXT_ADDR: $TXT_ADDR"
     echo "TXT_ADDR_LE: $TXT_ADDR_LE"
@@ -197,41 +160,11 @@ while [ $i -lt "$S_CNT" ]; do
     SECTIONS+=( "$(echo -e "$S_DATA" | head -n $((3*i)) | tail -n3 | head -n1 | tail -n1)" )
 
     ADDR_OLD_TMP=$(echo -e "$S_DATA" | head -n $((3*i)) | tail -n3 | head -n2 | tail -n1 | sed "s/^0x//g")
-    if [ $((${#ADDR_OLD_TMP}%2)) -ne 0 ]; then
-        ADDR_OLD_TMP=${ADDR_OLD_TMP/^/0}
-    fi
-    if [ ${#ADDR_OLD_TMP} -le 2 ]; then
-        ADDR_OLD_TMP=${ADDR_OLD_TMP/^/00}
-    fi
-    if [ ${#ADDR_OLD_TMP} -le 4 ]; then
-        ADDR_OLD_TMP=${ADDR_OLD_TMP/^/00}
-    fi
-    if [ ${#ADDR_OLD_TMP} -le 6 ]; then
-        ADDR_OLD_TMP=${ADDR_OLD_TMP/^/00}
-    fi
-    if [ ${#ADDR_OLD_TMP} -lt 8 ]; then
-        ADDR_OLD_TMP=${ADDR_OLD_TMP/^/00}
-    fi
-    # ADDR_OLD_TMP=$(echo $ADDR_OLD_TMP | sed 's/^/0x/')
+    ADDR_OLD_TMP=$(pad_variable_to_size "$ADDR_OLD_TMP" 8)
     ADDRS_OLD+=( "$ADDR_OLD_TMP" )
 
     ADDR_NEW_TMP=$(echo -e "$S_DATA" | head -n $((3*i)) | tail -n3 | head -n3 | tail -n1 | sed "s/^0x//g")
-    if [ $((${#ADDR_NEW_TMP}%2)) -ne 0 ]; then
-        ADDR_NEW_TMP=${ADDR_NEW_TMP/^/0}
-    fi
-    if [ ${#ADDR_NEW_TMP} -le 2 ]; then
-        ADDR_NEW_TMP=${ADDR_NEW_TMP/^/00}
-    fi
-    if [ ${#ADDR_NEW_TMP} -le 4 ]; then
-        ADDR_NEW_TMP=${ADDR_NEW_TMP/^/00}
-    fi
-    if [ ${#ADDR_NEW_TMP} -le 6 ]; then
-        ADDR_NEW_TMP=${ADDR_NEW_TMP/^/00}
-    fi
-    if [ ${#ADDR_NEW_TMP} -lt 8 ]; then
-        ADDR_NEW_TMP=${ADDR_NEW_TMP/^/00}
-    fi
-    # ADDR_NEW_TMP=$(echo $ADDR_NEW_TMP | sed 's/^/0x/')
+    ADDR_NEW_TMP=$(pad_variable_to_size "$ADDR_NEW_TMP" 8)
     ADDRS_NEW+=( "$ADDR_NEW_TMP" )
 
 done
@@ -251,15 +184,7 @@ echo "| SECTION_IDS: ${SECTION_IDS[*]}"
 SECTION_IDS_LE_HEXES=()
 for id in "${SECTION_IDS[@]}"; do
     SECTION_IDS_HEX=$(printf %x "$id")
-    if [ $((${#SECTION_IDS_HEX}%2)) -ne 0 ]; then
-        SECTION_IDS_HEX=${SECTION_IDS_HEX/^/0}
-    fi
-    if [ ${#SECTION_IDS_HEX} -le 2 ]; then
-        SECTION_IDS_HEX=${SECTION_IDS_HEX/^/00}
-    fi
-    if [ ${#SECTION_IDS_HEX} -lt 4 ]; then
-        SECTION_IDS_HEX=${SECTION_IDS_HEX/^/00}
-    fi
+    SECTION_IDS_HEX=$(pad_variable_to_size "$SECTION_IDS_HEX" 4)
     # clamped to 4 according to section header spec (8 bytes)
     SECTION_IDS_LE_HEXES+=( "$(echo "$SECTION_IDS_HEX" | tac -rs .. | tr -d '\n')" )
 done
@@ -348,38 +273,11 @@ function patch_symtab_and_dynamic_sections() {
     echo "| DELTA: $DELTA"
 
     STOP_ADDR=$(printf %x $(($(echo "$2" | tac -rs .. | tr -d '\n' | sed "s/^/0x/g")+0x$DELTA)))
-    if [ $((${#STOP_ADDR}%2)) -ne 0 ]; then
-        STOP_ADDR=${STOP_ADDR/^/0}
-    fi
-    if [ ${#STOP_ADDR} -le 2 ]; then
-        STOP_ADDR=${STOP_ADDR/^/00}
-    fi
-    if [ ${#STOP_ADDR} -le 4 ]; then
-        STOP_ADDR=${STOP_ADDR/^/00}
-    fi
-    if [ ${#STOP_ADDR} -le 6 ]; then
-        STOP_ADDR=${STOP_ADDR/^/00}
-    fi
-    if [ ${#STOP_ADDR} -lt 8 ]; then
-        STOP_ADDR=${STOP_ADDR/^/00}
-    fi
+    STOP_ADDR=$(pad_variable_to_size "$STOP_ADDR" 8)
 
     NEW_ADDR=$(printf %x $((0x$STOP_ADDR+0x$DELTA)))
-    if [ $((${#NEW_ADDR}%2)) -ne 0 ]; then
-        NEW_ADDR=${NEW_ADDR/^/0}
-    fi
-    if [ ${#NEW_ADDR} -le 2 ]; then
-        NEW_ADDR=${NEW_ADDR/^/00}
-    fi
-    if [ ${#NEW_ADDR} -le 4 ]; then
-        NEW_ADDR=${NEW_ADDR/^/00}
-    fi
-    if [ ${#NEW_ADDR} -le 6 ]; then
-        NEW_ADDR=${NEW_ADDR/^/00}
-    fi
-    if [ ${#NEW_ADDR} -lt 8 ]; then
-        NEW_ADDR=${NEW_ADDR/^/00}
-    fi
+    NEW_ADDR=$(pad_variable_to_size "$NEW_ADDR" 8)
+
     STOP_ADDR=$(echo "$STOP_ADDR" | tac -rs .. | tr -d '\n')
     NEW_ADDR=$(echo "$NEW_ADDR" | tac -rs .. | tr -d '\n')
     echo "| STOP_ADDR: $STOP_ADDR"
@@ -401,7 +299,7 @@ function patch_symtab_and_dynamic_sections() {
 "${PFX}"objcopy --update-section .text=target.text target target_patch && mv target_patch target && rm target.text
 
 # Add our new function in Patch to the symtab
-TARGET_TEXT_SZ_ORIG_HEX=${TARGET_TEXT_SZ_ORIG/^/0x}
+TARGET_TEXT_SZ_ORIG_HEX=$(echo $TARGET_TEXT_SZ_ORIG | sed "s/^/0x/g")
 "${PFX}"objcopy --add-symbol __patch=".text:${TARGET_TEXT_SZ_ORIG_HEX},global,function" target target_patch && mv target_patch target
 
 i=0
