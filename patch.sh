@@ -34,6 +34,10 @@ function rawhex_to_escaped_hex() {
     sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g"
 }
 
+function change_endianness() {
+    tac -rs .. | tr -d '\n'
+}
+
 # Prepare Target Binary
 cat << EOF > target.c
 #include <stdio.h>
@@ -121,13 +125,13 @@ if [[ $COMPILER =~ "clang" ]]; then
 
     TXT_ADDR=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n')
     TXT_ADDR=$(pad_variable_to_size "$TXT_ADDR" 8)
-    TXT_ADDR_LE=$(echo "$TXT_ADDR" | tac -rs .. | tr -d '\n')
+    TXT_ADDR_LE=$(echo "$TXT_ADDR" | change_endianness)
     echo "TXT_ADDR: $TXT_ADDR"
     echo "TXT_ADDR_LE: $TXT_ADDR_LE"
     echo
-    TARGET_TEXT_SZ_ORIG_LE=$(echo "${TARGET_TEXT_SZ_ORIG}" | tac -rs .. | tr -d '\n')
+    TARGET_TEXT_SZ_ORIG_LE=$(echo "${TARGET_TEXT_SZ_ORIG}" | change_endianness)
     echo "TARGET_TEXT_SZ_ORIG_LE: $TARGET_TEXT_SZ_ORIG_LE"
-    TARGET_TEXT_SZ_PATCHED_LE=$(echo "${TARGET_TEXT_SZ_PATCHED}" | tac -rs .. | tr -d '\n')
+    TARGET_TEXT_SZ_PATCHED_LE=$(echo "${TARGET_TEXT_SZ_PATCHED}" | change_endianness)
     echo "TARGET_TEXT_SZ_PATCHED_LE: $TARGET_TEXT_SZ_PATCHED_LE"
     echo
     xxd -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > hex-target.txt
@@ -190,7 +194,7 @@ for id in "${SECTION_IDS[@]}"; do
     SECTION_IDS_HEX=$(printf %x "$id")
     SECTION_IDS_HEX=$(pad_variable_to_size "$SECTION_IDS_HEX" 4)
     # clamped to 4 according to section header spec (8 bytes)
-    SECTION_IDS_LE_HEXES+=( "$(echo "$SECTION_IDS_HEX" | tac -rs .. | tr -d '\n')" )
+    SECTION_IDS_LE_HEXES+=( "$(echo "$SECTION_IDS_HEX" | change_endianness)" )
 done
 echo "| SECTION_IDS_LE_HEXES: ${SECTION_IDS_LE_HEXES[*]}"
 echo "-------------------------------------------------------"
@@ -269,21 +273,22 @@ function patch_symtab_and_dynamic_sections() {
         sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
     fi
 
-    START_SEC=$(grep -oE "^.{,12}1100.{,32}$" hex-dynsym.txt | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n1 | tail -n1 | tac -rs .. | tr -d '\n') # __start_section
-    STOPS_SEC=$(grep -oE "^.{,12}1100.{,32}$" hex-dynsym.txt | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n2 | tail -n1 | tac -rs .. | tr -d '\n') # __stop_section
+     # __start_section and __stop_section
+    START_SEC=$(grep -oE "^.{,12}1100.{,32}$" hex-dynsym.txt | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n1 | tail -n1 | change_endianness)
+    STOPS_SEC=$(grep -oE "^.{,12}1100.{,32}$" hex-dynsym.txt | cut -c17- | grep -oE "^[0-9a-f]{10}" | head -n2 | tail -n1 | change_endianness)
     echo "| START_SEC: $START_SEC"
     echo "| STOPS_SEC: $STOPS_SEC"
     DELTA=$(printf %x $((0x$STOPS_SEC-0x$START_SEC)))
     echo "| DELTA: $DELTA"
 
-    STOP_ADDR=$(printf %x $(($(echo "$2" | tac -rs .. | tr -d '\n' | sed "s/^/0x/g")+0x$DELTA)))
+    STOP_ADDR=$(printf %x $(($(echo "$2" | change_endianness | sed "s/^/0x/g")+0x$DELTA)))
     STOP_ADDR=$(pad_variable_to_size "$STOP_ADDR" 8)
 
     NEW_ADDR=$(printf %x $((0x$STOP_ADDR+0x$DELTA)))
     NEW_ADDR=$(pad_variable_to_size "$NEW_ADDR" 8)
 
-    STOP_ADDR=$(echo "$STOP_ADDR" | tac -rs .. | tr -d '\n')
-    NEW_ADDR=$(echo "$NEW_ADDR" | tac -rs .. | tr -d '\n')
+    STOP_ADDR=$(echo "$STOP_ADDR" | change_endianness)
+    NEW_ADDR=$(echo "$NEW_ADDR" | change_endianness)
     echo "| STOP_ADDR: $STOP_ADDR"
     echo "| NEW_ADDR:  $NEW_ADDR"
 
@@ -313,8 +318,8 @@ while [ $i -lt "$S_CNT" ]; do
     echo "| SECTIONS: ${SECTIONS[$i]}"
     # Compute the new addr of section after .text and patch it's symtab and dynamic addresses
     # These are 16 bytes everywhere.
-    S_OLD_ADDR=$(echo "${ADDRS_OLD[$i]}" | tac -rs .. | tr -d '\n')
-    S_NEW_ADDR=$(echo "${ADDRS_NEW[$i]}" | tac -rs .. | tr -d '\n')
+    S_OLD_ADDR=$(echo "${ADDRS_OLD[$i]}" | change_endianness)
+    S_NEW_ADDR=$(echo "${ADDRS_NEW[$i]}" | change_endianness)
     echo "|-> LOCAL | DEFAULT"
     patch_symtab_and_dynamic_sections "$S_OLD_ADDR" "$S_NEW_ADDR" "${SECTION_IDS_LE_HEXES[$i]}" "00" "03" # LOCAL  DEFAULT
     echo "|-> GLOBAL | HIDDEN"
@@ -333,8 +338,8 @@ while [ $i -lt "$S_CNT" ]; do
     # patch section header address, set VMA=LMA
     echo "+ SECTION HEADER VMA=LMA PATCHING"
     echo "| SECTIONS: ${SECTIONS[$i]}"
-    S_OLD_ADDR=$(echo "${ADDRS_OLD[$i]}" | tac -rs .. | tr -d '\n')
-    S_NEW_ADDR=$(echo "${ADDRS_NEW[$i]}" | tac -rs .. | tr -d '\n')
+    S_OLD_ADDR=$(echo "${ADDRS_OLD[$i]}" | change_endianness)
+    S_NEW_ADDR=$(echo "${ADDRS_NEW[$i]}" | change_endianness)
     echo "| S_OLD_ADDR: $S_OLD_ADDR"
     echo "| S_NEW_ADDR: $S_NEW_ADDR"
     SH_OLD_HEX=${S_OLD_ADDR}"00000000"${S_NEW_ADDR}
