@@ -59,7 +59,7 @@ echo "-------------------------------------------------------"
 echo "| TARGET_TEXT_SZ_ORIG: $TARGET_TEXT_SZ_ORIG"
 
 # Dump ELF data from Target
-"${PFX}"readelf -a target > re-target_pre.txt
+"${PFX}"readelf -a target > re-target-initial.txt
 
 # Print obj data of initial target file
 "${PFX}"objdump -d target > od-target-initial.txt
@@ -361,8 +361,8 @@ done
 rm hex-section.txt
 
 # Dump ELF data of final file and diff
-"${PFX}"readelf -a target > re-target_pst.txt
-diff -ur re-target_pre.txt re-target_pst.txt > re-diff.txt
+"${PFX}"readelf -a target > re-target-final.txt
+diff -ur re-target-initial.txt re-target-final.txt > re-diff.txt
 
 # Print obj data of final file
 "${PFX}"objdump -d target > od-target-final.txt
