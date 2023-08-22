@@ -122,27 +122,41 @@ echo "| TARGET_TEXT_SZ_PATCHED: $TARGET_TEXT_SZ_PATCHED"
 echo "-------------------------------------------------------"
 echo
 
+SECTION_HDR_START=$("${PFX}"readelf -h target | grep -E "Start of section headers"  | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+SECTION_HDR_WIDTH=$("${PFX}"readelf -h target | grep -E "Size of section headers"   | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+SECTION_HDR_COUNT=$("${PFX}"readelf -h target | grep -E "Number of section headers" | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+xxd -g0 -s "$SECTION_HDR_START" -l $((SECTION_HDR_COUNT*SECTION_HDR_WIDTH)) target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{128}" > hex-section.txt
+
 if [[ $COMPILER =~ "clang" ]]; then
 
+    # Compute .text section address and offset
+    if [[ $COMPILER =~ "clang" ]]; then
+        SIZE_SELECT=7
+    else
+        SIZE_SELECT=8
+    fi
     TXT_ADDR=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n')
-    TXT_ADDR=$(pad_variable_to_size "$TXT_ADDR" 8)
-    TXT_ADDR_LE=$(echo "$TXT_ADDR" | change_endianness)
+    TXT_ADDR=$(pad_variable_to_size "$TXT_ADDR" 16)
+    TXT_SIZE=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n ${SIZE_SELECT}p | tr -d '\n')
+    TXT_SIZE=$(pad_variable_to_size "$TXT_SIZE" 16)
+    TXT_SIZE=$(echo "$TXT_SIZE" | change_endianness)
+    TEXT_SZ_NEW=$(pad_variable_to_size "$TARGET_TEXT_SZ_PATCHED" 16)
+    TEXT_SZ_NEW=$(echo "${TEXT_SZ_NEW}" | change_endianness)
+    echo "TEXT_SZ_NEW: $TEXT_SZ_NEW"
     echo "TXT_ADDR: $TXT_ADDR"
-    echo "TXT_ADDR_LE: $TXT_ADDR_LE"
+    echo "TXT_SIZE: $TXT_SIZE"
+
+    # for section header, addresses are 8 bytes (16 hex charas)
+    TXT_SH_MATCH=$(grep -E ".{,8}.{,8}.{,16}.${TXT_ADDR}.{,16}.${TXT_SIZE}.{,8}.{,8}.{,16}.{,16}" hex-section.txt)
+    TXT_SH_OFFST=$(echo "$TXT_SH_MATCH" | sed -r "s/^[0-9a-f]{48}//g"  | grep -oE "^[0-9a-f]{16}")
+    TXT_SH_PATCH=${TXT_SH_MATCH/$TXT_SIZE/$TEXT_SZ_NEW}
+    echo "TXT_SH_MATCH: $TXT_SH_MATCH"
+    echo "TXT_SH_OFFST: $TXT_SH_OFFST"
+    echo "TXT_SH_PATCH: $TXT_SH_PATCH"
     echo
-    TARGET_TEXT_SZ_ORIG_LE=$(echo "${TARGET_TEXT_SZ_ORIG}" | change_endianness)
-    echo "TARGET_TEXT_SZ_ORIG_LE: $TARGET_TEXT_SZ_ORIG_LE"
-    TARGET_TEXT_SZ_PATCHED_LE=$(echo "${TARGET_TEXT_SZ_PATCHED}" | change_endianness)
-    echo "TARGET_TEXT_SZ_PATCHED_LE: $TARGET_TEXT_SZ_PATCHED_LE"
-    echo
-    xxd -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > hex-target.txt
-    TXT_MATCH=$(grep -oE "${TXT_ADDR_LE}00000000${TXT_ADDR_LE}00000000${TARGET_TEXT_SZ_ORIG_LE}" hex-target.txt | head -n1 | rawhex_to_escaped_hex)
-    TXT_PATCH=$(echo "${TXT_ADDR_LE}00000000${TXT_ADDR_LE}00000000${TARGET_TEXT_SZ_PATCHED_LE}" | rawhex_to_escaped_hex)
-    echo "TXT_MATCH: $TXT_MATCH"
-    echo "TXT_PATCH: $TXT_PATCH"
-    sed -i "s|$TXT_MATCH|$TXT_PATCH|g" target
-    rm hex-target.txt
-    echo
+    TXT_SH_MATCH=$(echo "$TXT_SH_MATCH" | rawhex_to_escaped_hex)
+    TXT_SH_PATCH=$(echo "$TXT_SH_PATCH" | rawhex_to_escaped_hex)
+    sed -i "s|$TXT_SH_MATCH|$TXT_SH_PATCH|g" target
 
 fi
 
@@ -357,11 +371,6 @@ while [ $i -lt "$S_CNT" ]; do
 done
 echo
 
-SECTION_HDR_START=$("${PFX}"readelf -h target | grep -E "Start of section headers"  | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
-SECTION_HDR_WIDTH=$("${PFX}"readelf -h target | grep -E "Size of section headers"   | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
-SECTION_HDR_COUNT=$("${PFX}"readelf -h target | grep -E "Number of section headers" | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
-xxd -g0 -s "$SECTION_HDR_START" -l $((SECTION_HDR_COUNT*SECTION_HDR_WIDTH)) target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{128}" > hex-section.txt
-
 i=0
 while [ $i -lt "$S_CNT" ]; do
     # patch section header address, set VMA=LMA
@@ -381,8 +390,8 @@ while [ $i -lt "$S_CNT" ]; do
     echo "| SH_OFFST: $SH_OFFST"
     echo "| SH_PATCH: $SH_PATCH"
     echo
-    SH_MATCH=$(echo $SH_MATCH | rawhex_to_escaped_hex)
-    SH_PATCH=$(echo $SH_PATCH | rawhex_to_escaped_hex)
+    SH_MATCH=$(echo "$SH_MATCH" | rawhex_to_escaped_hex)
+    SH_PATCH=$(echo "$SH_PATCH" | rawhex_to_escaped_hex)
     sed -i "s|$SH_MATCH|$SH_PATCH|g" target
     i=$((i+1))
 done
