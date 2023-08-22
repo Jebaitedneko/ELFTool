@@ -156,6 +156,7 @@ else
     ALT_PFX="$PFX"
 fi
 "$ALT_PFX"objcopy --update-section .text=target.text target target.temp &> objcopy-out.txt && rm target.temp
+cat objcopy-out.txt
 S_CNT=$(wc -l < objcopy-out.txt)
 S_DATA=$(cut -f3 -d: objcopy-out.txt | sed "s/.*section //g;s/lma //g;s/adjusted to //g;s/\n/ /g;s/ /\n/g")
 rm objcopy-out.txt
@@ -262,7 +263,7 @@ function patch_symtab_and_dynamic_sections() {
     echo "| Dynsym Section at $DYNSYM_ADDR of size $DYNSYM_SIZE"
     xxd -s "$(printf %d "$DYNSYM_ADDR")" -l "$(printf %d "$DYNSYM_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" > hex-dynsym.txt
 
-    DYNSYM_OLDHX=$(grep -oE ".{,12}${3}${1}.{,24}" hex-dynsym.txt)
+    DYNSYM_OLDHX=$(grep -oE ".{,12}${3}${1}.{,16}" hex-dynsym.txt)
     if [ ${#DYNSYM_OLDHX} -gt 2 ]; then
         DYNSYM_PATCH=${DYNSYM_OLDHX/$1/$2}
         echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
