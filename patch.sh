@@ -157,6 +157,7 @@ else
 fi
 "$ALT_PFX"objcopy --update-section .text=target.text target target.temp &> objcopy-out.txt && rm target.temp
 cat objcopy-out.txt
+echo
 S_CNT=$(wc -l < objcopy-out.txt)
 S_DATA=$(cut -f3 -d: objcopy-out.txt | sed "s/.*section //g;s/lma //g;s/adjusted to //g;s/\n/ /g;s/ /\n/g")
 rm objcopy-out.txt
@@ -215,11 +216,12 @@ function patch_symtab_and_dynamic_sections() {
     fi
     DYN_ADDR=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynamic" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
     DYN_SIZE=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynamic" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n ${SIZE_SELECT}p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
-    echo "| Dynamic Section at $DYN_ADDR of size $DYN_SIZE"
+    echo
+    echo "+ Dynamic Section at $DYN_ADDR of size $DYN_SIZE"
     xxd -s "$(printf %d "$DYN_ADDR")" -l "$(printf %d "$DYN_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" > hex-dyn.txt
 
     DYN_OLDHX=$(grep -E ".{,16}$1.{,16}" hex-dyn.txt)
-    if [ ${#DYN_OLDHX} -gt 2 ]; then
+    if [ ${#DYN_OLDHX} -gt 0 ]; then
         DYN_PATCH=${DYN_OLDHX/$1/$2}
         echo "| DYN_OLDHX: $DYN_OLDHX"
         echo "| DYN_PATCH: $DYN_PATCH"
@@ -236,20 +238,31 @@ function patch_symtab_and_dynamic_sections() {
     fi
     SYM_ADDR=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .symtab" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
     SYM_SIZE=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .symtab" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n ${SIZE_SELECT}p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
-    echo "| Symtab Section at $SYM_ADDR of size $SYM_SIZE"
+    echo
+    echo "+ Symtab Section at $SYM_ADDR of size $SYM_SIZE"
     xxd -s "$(printf %d "$SYM_ADDR")" -l "$(printf %d "$SYM_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" > hex-sym.txt
 
-    SYM_OLDHX=$(grep -E ".{,12}${3}${1}.{,16}" hex-sym.txt)
-    echo "| ST_INFO:  $(echo "$SYM_OLDHX" | sed -r "s/^[0-9a-f]{8}//g"  | grep -oE "^[0-9a-f]{2}")"
-    echo "| ST_OTHER: $(echo "$SYM_OLDHX" | sed -r "s/^[0-9a-f]{10}//g" | grep -oE "^[0-9a-f]{2}")"
-    if [ ${#SYM_OLDHX} -gt 2 ]; then
-        SYM_PATCH=${SYM_OLDHX/$1/$2}
-        echo "| SYM_OLDHX: $SYM_OLDHX"
-        echo "| SYM_PATCH: $SYM_PATCH"
-        SYM_PATCH=$(echo "$SYM_PATCH" | rawhex_to_escaped_hex)
-        SYM_OLDHX=$(echo "$SYM_OLDHX" | rawhex_to_escaped_hex)
-        sed -i "s|$SYM_OLDHX|$SYM_PATCH|g" target
-    fi
+    HEXES=()
+    while read -r hex; do
+        HEXES+=("$hex")
+    done < <(grep -E ".{,12}${3}${1}.{,16}" hex-sym.txt)
+    for hex in "${HEXES[@]}"; do
+        SYM_OLDHX="$hex"
+        ST_NAME=$(echo "$SYM_OLDHX" | grep -oE "^[0-9a-f]{8}")
+        ST_INFO=$(echo "$SYM_OLDHX" | sed -r "s/^[0-9a-f]{8}//g"  | grep -oE "^[0-9a-f]{2}")
+        ST_OTHER=$(echo "$SYM_OLDHX" | sed -r "s/^[0-9a-f]{10}//g" | grep -oE "^[0-9a-f]{2}")
+        echo "| ST_NAME:  $ST_NAME"
+        echo "| ST_INFO:  $ST_INFO"
+        echo "| ST_OTHER: $ST_OTHER"
+        if [ ${#SYM_OLDHX} -gt 0 ]; then
+            SYM_PATCH=${SYM_OLDHX/$1/$2}
+            echo "| SYM_OLDHX: $SYM_OLDHX"
+            echo "| SYM_PATCH: $SYM_PATCH"
+            SYM_PATCH=$(echo "$SYM_PATCH" | rawhex_to_escaped_hex)
+            SYM_OLDHX=$(echo "$SYM_OLDHX" | rawhex_to_escaped_hex)
+            sed -i "s|$SYM_OLDHX|$SYM_PATCH|g" target
+        fi
+    done
 
     # Compute .dynsym section address and offset
     if [[ $COMPILER =~ "clang" ]]; then
@@ -259,50 +272,63 @@ function patch_symtab_and_dynamic_sections() {
     fi
     DYNSYM_ADDR=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynsym" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
     DYNSYM_SIZE=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .dynsym" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n ${SIZE_SELECT}p | tr -d '\n' | sed 's/^0*//;s/^/0x/')
-    echo "| Dynsym Section at $DYNSYM_ADDR of size $DYNSYM_SIZE"
+    echo
+    echo "+ Dynsym Section at $DYNSYM_ADDR of size $DYNSYM_SIZE"
     xxd -s "$(printf %d "$DYNSYM_ADDR")" -l "$(printf %d "$DYNSYM_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" > hex-dynsym.txt
 
-    DYNSYM_OLDHX=$(grep -E ".{,12}${3}${1}.{,16}" hex-dynsym.txt)
-    echo "| ST_INFO:  $(echo "$SYM_OLDHX" | sed -r "s/^[0-9a-f]{8}//g"  | grep -oE "^[0-9a-f]{2}")"
-    echo "| ST_OTHER: $(echo "$SYM_OLDHX" | sed -r "s/^[0-9a-f]{10}//g" | grep -oE "^[0-9a-f]{2}")"
-    if [ ${#DYNSYM_OLDHX} -gt 2 ]; then
-        DYNSYM_PATCH=${DYNSYM_OLDHX/$1/$2}
-        echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
-        echo "| DYNSYM_PATCH: $DYNSYM_PATCH"
-        DYNSYM_PATCH=$(echo "$DYNSYM_PATCH" | rawhex_to_escaped_hex)
-        DYNSYM_OLDHX=$(echo "$DYNSYM_OLDHX" | rawhex_to_escaped_hex)
-        sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
-    fi
+    HEXES=()
+    while read -r hex; do
+        HEXES+=("$hex")
+    done < <(grep -E ".{,12}${3}${1}.{,16}" hex-sym.txt)
+    for hex in "${HEXES[@]}"; do
+        DYNSYM_OLDHX="$hex"
+        ST_NAME=$(echo "$DYNSYM_OLDHX" | grep -oE "^[0-9a-f]{8}")
+        ST_INFO=$(echo "$DYNSYM_OLDHX" | sed -r "s/^[0-9a-f]{8}//g"  | grep -oE "^[0-9a-f]{2}")
+        ST_OTHER=$(echo "$DYNSYM_OLDHX" | sed -r "s/^[0-9a-f]{10}//g" | grep -oE "^[0-9a-f]{2}")
+        echo "| ST_NAME:  $ST_NAME"
+        echo "| ST_INFO:  $ST_INFO"
+        echo "| ST_OTHER: $ST_OTHER"
+        if [ ${#DYNSYM_OLDHX} -gt 0 ]; then
+            DYNSYM_PATCH=${DYNSYM_OLDHX/$1/$2}
+            echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
+            echo "| DYNSYM_PATCH: $DYNSYM_PATCH"
+            DYNSYM_PATCH=$(echo "$DYNSYM_PATCH" | rawhex_to_escaped_hex)
+            DYNSYM_OLDHX=$(echo "$DYNSYM_OLDHX" | rawhex_to_escaped_hex)
+            sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
+        fi
 
-     # __start_section and __stop_section
-    START_SEC=$(grep -E ".{,12}${3}.{,32}" hex-dynsym.txt | sed -r "s/^[0-9a-f]{16}//g" | grep -oE "^[0-9a-f]{10}" | head -n1 | tail -n1 | change_endianness)
-    STOPS_SEC=$(grep -E ".{,12}${3}.{,32}" hex-dynsym.txt | sed -r "s/^[0-9a-f]{16}//g" | grep -oE "^[0-9a-f]{10}" | head -n2 | tail -n1 | change_endianness)
-    echo "| START_SEC: $START_SEC"
-    echo "| STOPS_SEC: $STOPS_SEC"
-    DELTA=$(printf %x $((0x$STOPS_SEC-0x$START_SEC)))
-    echo "| DELTA: $DELTA"
+        # __start_section and __stop_section
+        START_SEC=$(grep -E ".{,12}${3}.{,32}" hex-dynsym.txt | sed -r "s/^[0-9a-f]{16}//g" | grep -oE "^[0-9a-f]{10}" | head -n1 | tail -n1 | change_endianness)
+        STOPS_SEC=$(grep -E ".{,12}${3}.{,32}" hex-dynsym.txt | sed -r "s/^[0-9a-f]{16}//g" | grep -oE "^[0-9a-f]{10}" | head -n2 | tail -n1 | change_endianness)
+        if [[ ${#START_SEC} -gt 0 && ${#STOPS_SEC} -gt 0 && $(printf %d 0x"$STOPS_SEC") -ge $(printf %d 0x"$START_SEC") ]]; then
+            echo "| START_SEC: $START_SEC"
+            echo "| STOPS_SEC: $STOPS_SEC"
+            DELTA=$(printf %x $((0x$STOPS_SEC-0x$START_SEC)))
+            echo "| DELTA: $DELTA"
 
-    STOP_ADDR=$(printf %x $(($(echo "$2" | change_endianness | sed "s/^/0x/g")+0x$DELTA)))
-    STOP_ADDR=$(pad_variable_to_size "$STOP_ADDR" 8)
+            STOP_ADDR=$(printf %x $(($(echo "$2" | change_endianness | sed "s/^/0x/g")+0x$DELTA)))
+            STOP_ADDR=$(pad_variable_to_size "$STOP_ADDR" 8)
 
-    NEW_ADDR=$(printf %x $((0x$STOP_ADDR+0x$DELTA)))
-    NEW_ADDR=$(pad_variable_to_size "$NEW_ADDR" 8)
+            NEW_ADDR=$(printf %x $((0x$STOP_ADDR+0x$DELTA)))
+            NEW_ADDR=$(pad_variable_to_size "$NEW_ADDR" 8)
 
-    STOP_ADDR=$(echo "$STOP_ADDR" | change_endianness)
-    NEW_ADDR=$(echo "$NEW_ADDR" | change_endianness)
-    echo "| STOP_ADDR: $STOP_ADDR"
-    echo "| NEW_ADDR:  $NEW_ADDR"
+            STOP_ADDR=$(echo "$STOP_ADDR" | change_endianness)
+            NEW_ADDR=$(echo "$NEW_ADDR" | change_endianness)
+            echo "| STOP_ADDR: $STOP_ADDR"
+            echo "| NEW_ADDR:  $NEW_ADDR"
 
-    DYNSYM_OLDHX=$(grep -oE ".{,12}${3}${STOP_ADDR}.{,24}" hex-dynsym.txt)
-    if [ ${#DYNSYM_OLDHX} -gt 2 ]; then
-        echo "| patching __stop_symbol"
-        DYNSYM_PATCH=${DYNSYM_OLDHX/${STOP_ADDR}/${NEW_ADDR}}
-        echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
-        echo "| DYNSYM_PATCH: $DYNSYM_PATCH"
-        DYNSYM_PATCH=$(echo "$DYNSYM_PATCH" | rawhex_to_escaped_hex)
-        DYNSYM_OLDHX=$(echo "$DYNSYM_OLDHX" | rawhex_to_escaped_hex)
-        sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
-    fi
+            DYNSYM_OLDHX=$(grep -oE ".{,12}${3}${STOP_ADDR}.{,24}" hex-dynsym.txt)
+            if [ ${#DYNSYM_OLDHX} -gt 0 ]; then
+                echo "| patching __stop_symbol"
+                DYNSYM_PATCH=${DYNSYM_OLDHX/${STOP_ADDR}/${NEW_ADDR}}
+                echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
+                echo "| DYNSYM_PATCH: $DYNSYM_PATCH"
+                DYNSYM_PATCH=$(echo "$DYNSYM_PATCH" | rawhex_to_escaped_hex)
+                DYNSYM_OLDHX=$(echo "$DYNSYM_OLDHX" | rawhex_to_escaped_hex)
+                sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
+            fi
+        fi
+    done
 }
 
 # Update .text section with new .text data
@@ -325,7 +351,7 @@ while [ $i -lt "$S_CNT" ]; do
     echo "| SECTIONS: ${SECTIONS[$i]}"
     echo "| S_OLD_ADDR: $S_OLD_ADDR"
     echo "| S_NEW_ADDR: $S_NEW_ADDR"
-    echo "| SECTION_IDS_LE_HEXES[i]: ${SECTION_IDS_LE_HEXES[$i]}"
+    echo "| SECTION_IDS_LE_HEXES[$i]: ${SECTION_IDS_LE_HEXES[$i]}"
     patch_symtab_and_dynamic_sections "$S_OLD_ADDR" "$S_NEW_ADDR" "${SECTION_IDS_LE_HEXES[$i]}"
     i=$((i+1))
 done
