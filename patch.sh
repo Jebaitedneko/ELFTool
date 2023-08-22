@@ -296,17 +296,23 @@ function patch_symtab_and_dynamic_sections() {
         SYM_OLDHX="$hex"
         ST_NAME=$(echo "$SYM_OLDHX" | grep -oE "^[0-9a-f]{8}")
         ST_INFO=$(echo "$SYM_OLDHX" | sed -r "s/^[0-9a-f]{8}//g"  | grep -oE "^[0-9a-f]{2}")
+        ST_BIND=$((0x$ST_INFO >> 4))
+        ST_TYPE=$((0x$ST_INFO & 0xf))
+        ST_VISI=$((0x$ST_INFO & 0x3))
         ST_OTHER=$(echo "$SYM_OLDHX" | sed -r "s/^[0-9a-f]{10}//g" | grep -oE "^[0-9a-f]{2}")
         echo "| ST_NAME:  $ST_NAME"
-        echo "| ST_INFO:  $ST_INFO"
-        echo "| ST_OTHER: $ST_OTHER"
-        if [ ${#SYM_OLDHX} -gt 0 ]; then
-            SYM_PATCH=${SYM_OLDHX/$1/$2}
-            echo "| SYM_OLDHX: $SYM_OLDHX"
-            echo "| SYM_PATCH: $SYM_PATCH"
-            SYM_PATCH=$(echo "$SYM_PATCH" | rawhex_to_escaped_hex)
-            SYM_OLDHX=$(echo "$SYM_OLDHX" | rawhex_to_escaped_hex)
-            sed -i "s|$SYM_OLDHX|$SYM_PATCH|g" target
+        echo "| ST_INFO:  $ST_INFO, ST_BIND:$ST_BIND, ST_TYPE:$ST_TYPE"
+        echo "| ST_OTHER: $ST_OTHER, ST_VISI:$ST_VISI"
+        # we only need to patch FUNCTION and SECTION types
+        if [[ $ST_TYPE -eq 2 || $ST_TYPE -eq 3 ]]; then
+            if [ ${#SYM_OLDHX} -gt 0 ]; then
+                SYM_PATCH=${SYM_OLDHX/$1/$2}
+                echo "| SYM_OLDHX: $SYM_OLDHX"
+                echo "| SYM_PATCH: $SYM_PATCH"
+                SYM_PATCH=$(echo "$SYM_PATCH" | rawhex_to_escaped_hex)
+                SYM_OLDHX=$(echo "$SYM_OLDHX" | rawhex_to_escaped_hex)
+                sed -i "s|$SYM_OLDHX|$SYM_PATCH|g" target
+            fi
         fi
     done
 
@@ -330,17 +336,23 @@ function patch_symtab_and_dynamic_sections() {
         DYNSYM_OLDHX="$hex"
         ST_NAME=$(echo "$DYNSYM_OLDHX" | grep -oE "^[0-9a-f]{8}")
         ST_INFO=$(echo "$DYNSYM_OLDHX" | sed -r "s/^[0-9a-f]{8}//g"  | grep -oE "^[0-9a-f]{2}")
+        ST_BIND=$((0x$ST_INFO >> 4))
+        ST_TYPE=$((0x$ST_INFO & 0xf))
+        ST_VISI=$((0x$ST_INFO & 0x3))
         ST_OTHER=$(echo "$DYNSYM_OLDHX" | sed -r "s/^[0-9a-f]{10}//g" | grep -oE "^[0-9a-f]{2}")
         echo "| ST_NAME:  $ST_NAME"
-        echo "| ST_INFO:  $ST_INFO"
-        echo "| ST_OTHER: $ST_OTHER"
-        if [ ${#DYNSYM_OLDHX} -gt 0 ]; then
-            DYNSYM_PATCH=${DYNSYM_OLDHX/$1/$2}
-            echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
-            echo "| DYNSYM_PATCH: $DYNSYM_PATCH"
-            DYNSYM_PATCH=$(echo "$DYNSYM_PATCH" | rawhex_to_escaped_hex)
-            DYNSYM_OLDHX=$(echo "$DYNSYM_OLDHX" | rawhex_to_escaped_hex)
-            sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
+        echo "| ST_INFO:  $ST_INFO, ST_BIND:$ST_BIND, ST_TYPE:$ST_TYPE"
+        echo "| ST_OTHER: $ST_OTHER, ST_VISI:$ST_VISI"
+        # we only need to patch FUNCTION and SECTION types
+        if [[ $ST_TYPE -eq 2 || $ST_TYPE -eq 3 ]]; then
+            if [ ${#DYNSYM_OLDHX} -gt 0 ]; then
+                DYNSYM_PATCH=${DYNSYM_OLDHX/$1/$2}
+                echo "| DYNSYM_OLDHX: $DYNSYM_OLDHX"
+                echo "| DYNSYM_PATCH: $DYNSYM_PATCH"
+                DYNSYM_PATCH=$(echo "$DYNSYM_PATCH" | rawhex_to_escaped_hex)
+                DYNSYM_OLDHX=$(echo "$DYNSYM_OLDHX" | rawhex_to_escaped_hex)
+                sed -i "s|$DYNSYM_OLDHX|$DYNSYM_PATCH|g" target
+            fi
         fi
 
         # __start_section and __stop_section
