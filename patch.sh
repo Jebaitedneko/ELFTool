@@ -265,6 +265,16 @@ function patch_symtab_and_dynamic_sections() {
         DYN_OLDHX=$(echo "$DYN_OLDHX" | rawhex_to_escaped_hex)
         sed -i "s|$DYN_OLDHX|$DYN_PATCH|g" target
     fi
+    echo "| DYN_POINT: $DYN_VALUE"
+    DYN_OLDHX=$(grep -E "^.{,16}.{,16}${DYN_VALUE}$" hex-dyn.txt)
+    if [ ${#DYN_OLDHX} -gt 0 ]; then
+        DYN_PATCH=${DYN_OLDHX/$1/$2}
+        echo "| DYN_OLDHX: $DYN_OLDHX"
+        echo "| DYN_PATCH: $DYN_PATCH"
+        DYN_PATCH=$(echo "$DYN_PATCH" | rawhex_to_escaped_hex)
+        DYN_OLDHX=$(echo "$DYN_OLDHX" | rawhex_to_escaped_hex)
+        sed -i "s|$DYN_OLDHX|$DYN_PATCH|g" target
+    fi
 
     # Compute .symtab section address and offset
     if [[ $COMPILER =~ "clang" ]]; then
