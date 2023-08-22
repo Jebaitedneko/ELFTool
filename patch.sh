@@ -34,6 +34,25 @@ function pad_variable_to_size() {
     echo "$temp"
 }
 
+function pad_variable_to_size_at_end() {
+    temp=$1
+    size=$2
+    if [ $((${#temp}%2)) -ne 0 ]; then
+        temp=$( echo "$temp" | sed "s/$/0/g" )
+    fi
+    i=2
+    while [ $i -lt "$size" ]; do
+        if [ ${#temp} -lt $i ]; then
+            temp=$( echo "$temp" | sed "s/$/00/g" )
+        fi
+        i=$((i+2))
+    done
+    if [ ${#temp} -lt "$size" ]; then
+        temp=$( echo "$temp" | sed "s/$/00/g" )
+    fi
+    echo "$temp"
+}
+
 function rawhex_to_escaped_hex() {
     sed "s/\([0-9a-f][0-9a-f]\)/\1 /g;s/ /\\\x/g;s/^/\\\x/g;s/\\\x$//g"
 }
@@ -137,6 +156,7 @@ if [[ $COMPILER =~ "clang" ]]; then
     fi
     TXT_ADDR=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n')
     TXT_ADDR=$(pad_variable_to_size "$TXT_ADDR" 16)
+    TXT_ADDR=$(echo "$TXT_ADDR" | change_endianness)
     TXT_SIZE=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n ${SIZE_SELECT}p | tr -d '\n')
     TXT_SIZE=$(pad_variable_to_size "$TXT_SIZE" 16)
     TXT_SIZE=$(echo "$TXT_SIZE" | change_endianness)
@@ -234,7 +254,9 @@ function patch_symtab_and_dynamic_sections() {
     echo "+ Dynamic Section at $DYN_ADDR of size $DYN_SIZE"
     xxd -s "$(printf %d "$DYN_ADDR")" -l "$(printf %d "$DYN_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" > hex-dyn.txt
 
-    DYN_OLDHX=$(grep -E ".{,16}$1.{,16}" hex-dyn.txt)
+    DYN_VALUE=$(pad_variable_to_size_at_end "$1" 16)
+    echo "| DYN_VALUE: $DYN_VALUE"
+    DYN_OLDHX=$(grep -E "^.{,16}${DYN_VALUE}.{,16}$" hex-dyn.txt)
     if [ ${#DYN_OLDHX} -gt 0 ]; then
         DYN_PATCH=${DYN_OLDHX/$1/$2}
         echo "| DYN_OLDHX: $DYN_OLDHX"
