@@ -403,6 +403,11 @@ while [ $i -lt "$S_CNT" ]; do
 done
 echo
 
+SECTION_HDR_START=$("${PFX}"readelf -h target | grep -E "Start of section headers"  | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+SECTION_HDR_WIDTH=$("${PFX}"readelf -h target | grep -E "Size of section headers"   | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+SECTION_HDR_COUNT=$("${PFX}"readelf -h target | grep -E "Number of section headers" | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
+xxd -g0 -s "$SECTION_HDR_START" -l $((SECTION_HDR_COUNT*SECTION_HDR_WIDTH)) target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{128}" > hex-section.txt
+
 i=0
 while [ $i -lt "$S_CNT" ]; do
     # patch section header address, set VMA=LMA
