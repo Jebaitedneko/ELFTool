@@ -1,0 +1,50 @@
+Custom target binary
+
+-------------------------------------------------------
+| TARGET_TEXT_SZ_ORIG: 00709280
+clang: warning: argument unused during compilation: '-fuse-ld=lld' [-Wunused-command-line-argument]
+| PATCH_TEXT_SZ: 00000018
+| TARGET_TEXT_SZ_PATCHED: 00709298
+-------------------------------------------------------
+
+TXT_ADDR: 001b6000
+TXT_ADDR_LE: 00601b00
+
+TARGET_TEXT_SZ_ORIG_LE: 80927000
+TARGET_TEXT_SZ_PATCHED_LE: 98927000
+
+TXT_MATCH: \x00\x60\x1b\x00\x00\x00\x00\x00\x00\x60\x1b\x00\x00\x00\x00\x00\x80\x92\x70\x00
+TXT_PATCH: \x00\x60\x1b\x00\x00\x00\x00\x00\x00\x60\x1b\x00\x00\x00\x00\x00\x98\x92\x70\x00
+
+aarch64-linux-gnu-objcopy: target.temp: section .plt lma 0x8bf280 adjusted to 0x8bf298
+
+-------------------------------------------------------
+| SECTIONS: .plt
+| ADDRS_OLD: 008bf280
+| ADDRS_NEW: 008bf298
+| SECTION_IDS: 15
+| SECTION_IDS_LE_HEXES: 0f00
+-------------------------------------------------------
+
+
++ SYMTAB + DYNAMIC PATCHING
+| SECTIONS: .plt
+| S_OLD_ADDR: 80f28b00
+| S_NEW_ADDR: 98f28b00
+| SECTION_IDS_LE_HEXES[0]: 0f00
+
++ Dynamic Section at 0x8d0358 of size 0x2e0
+
++ Symtab Section at 0x8ecc40 of size 0x30
+
++ Dynsym Section at 0x2a8 of size 0x20d0
+
++ SECTION HEADER VMA=LMA PATCHING
+| SECTIONS: .plt
+| S_OLD_ADDR: 80f28b00
+| S_NEW_ADDR: 98f28b00
+| FUZZY_END_HEX: 80f28b00
+| FUZZY_END_HEX_SZ: 8
+| SH_MATCH: \x80\xf2\x8b\x00\x00\x00\x00\x00\x80\xf2\x8b\x00
+| SH_PATCH: \x98\xf2\x8b\x00\x00\x00\x00\x00\x98\xf2\x8b\x00
+

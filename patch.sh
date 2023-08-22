@@ -360,39 +360,32 @@ echo
 SECTION_HDR_START=$("${PFX}"readelf -h target | grep -E "Start of section headers"  | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
 SECTION_HDR_WIDTH=$("${PFX}"readelf -h target | grep -E "Size of section headers"   | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
 SECTION_HDR_COUNT=$("${PFX}"readelf -h target | grep -E "Number of section headers" | cut -f2 -d: | sed 's/^[t ]*//g;s/ .*//g')
-xxd -g0 -s "$SECTION_HDR_START" -l $((SECTION_HDR_COUNT*SECTION_HDR_WIDTH)) target | grep -oE "[0-9a-f]{32}" | tr -d '\n' > hex-section.txt
+xxd -g0 -s "$SECTION_HDR_START" -l $((SECTION_HDR_COUNT*SECTION_HDR_WIDTH)) target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{128}" > hex-section.txt
 
 i=0
 while [ $i -lt "$S_CNT" ]; do
     # patch section header address, set VMA=LMA
     echo "+ SECTION HEADER VMA=LMA PATCHING"
     echo "| SECTIONS: ${SECTIONS[$i]}"
+    # for section header, addresses are 8 bytes (16 hex charas)
+    ADDRS_OLD[$i]=$(pad_variable_to_size "${ADDRS_OLD[$i]}" 16)
+    ADDRS_NEW[$i]=$(pad_variable_to_size "${ADDRS_NEW[$i]}" 16)
     S_OLD_ADDR=$(echo "${ADDRS_OLD[$i]}" | change_endianness)
     S_NEW_ADDR=$(echo "${ADDRS_NEW[$i]}" | change_endianness)
     echo "| S_OLD_ADDR: $S_OLD_ADDR"
     echo "| S_NEW_ADDR: $S_NEW_ADDR"
-    SH_OLD_HEX=${S_OLD_ADDR}"00000000"${S_NEW_ADDR}
-    FUZZY_END_HEX=$(grep -oE "${S_OLD_ADDR}00000000[0-9a-f]{8}" hex-section.txt | grep -oE "[0-9a-f]{8}$")
-    if [ ${#FUZZY_END_HEX} -gt 0 ]; then
-        echo "| FUZZY_END_HEX: ${FUZZY_END_HEX}"
-        echo "| FUZZY_END_HEX_SZ: ${#FUZZY_END_HEX}"
-        SH_MATCH=$(echo "$(echo "$SH_OLD_HEX" | grep -oE "^[0-9a-f]{16}")$FUZZY_END_HEX" | rawhex_to_escaped_hex)
-        SH_PATCH=$(echo "${FUZZY_END_HEX}00000000${FUZZY_END_HEX}" | rawhex_to_escaped_hex)
-        if [[ $COMPILER =~ "clang" ]]; then
-            SH_PATCH=$(echo "${S_NEW_ADDR}00000000${S_NEW_ADDR}" | rawhex_to_escaped_hex)
-        fi
-    else
-        SH_MATCH=$(echo "${S_OLD_ADDR}00000000${S_NEW_ADDR}" | rawhex_to_escaped_hex)
-        SH_PATCH=$(echo "${S_NEW_ADDR}00000000${S_NEW_ADDR}" | rawhex_to_escaped_hex)
-    fi
+    SH_MATCH=$(grep -E ".{,8}.{,8}.{,16}.${S_OLD_ADDR}.{,16}.{,16}.{,8}.{,8}.{,16}.{,16}" hex-section.txt)
+    SH_OFFST=$(echo "$SH_MATCH" | sed -r "s/^[0-9a-f]{48}//g"  | grep -oE "^[0-9a-f]{16}")
+    SH_PATCH=$(echo "$SH_MATCH" | sed "s/$S_OLD_ADDR/$S_NEW_ADDR/g;s/$SH_OFFST/$S_NEW_ADDR/g")
     echo "| SH_MATCH: $SH_MATCH"
+    echo "| SH_OFFST: $SH_OFFST"
     echo "| SH_PATCH: $SH_PATCH"
     echo
+    SH_MATCH=$(echo $SH_MATCH | rawhex_to_escaped_hex)
+    SH_PATCH=$(echo $SH_PATCH | rawhex_to_escaped_hex)
     sed -i "s|$SH_MATCH|$SH_PATCH|g" target
     i=$((i+1))
 done
-
-rm hex-section.txt
 
 # Dump ELF data of final file and diff
 "${PFX}"readelf -a target > re-target-final.txt
