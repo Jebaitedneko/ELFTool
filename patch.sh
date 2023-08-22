@@ -154,7 +154,7 @@ if [[ $COMPILER =~ "clang" ]]; then
     else
         SIZE_SELECT=8
     fi
-    TXT_ADDR=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 6p | tr -d '\n')
+    TXT_ADDR=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n 5p | tr -d '\n')
     TXT_ADDR=$(pad_variable_to_size "$TXT_ADDR" 16)
     TXT_ADDR=$(echo "$TXT_ADDR" | change_endianness)
     TXT_SIZE=$("${PFX}"readelf -t target | grep -E "\[[0-9a-f ]{2}\] .text" -A2 | sed "s/\[ /\[/g" | tr -d '\n' | tr -s " " | tr ' ' '\n' | sed -n ${SIZE_SELECT}p | tr -d '\n')
