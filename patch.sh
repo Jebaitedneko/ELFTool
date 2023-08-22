@@ -241,7 +241,7 @@ function patch_symtab_and_dynamic_sections() {
     echo "| Symtab Section at $SYM_ADDR of size $SYM_SIZE"
     xxd -s "$(printf %d "$SYM_ADDR")" -l "$(printf %d "$SYM_SIZE")" -g0 target | grep -oE "[0-9a-f]{32}" | tr -d '\n' | grep -oE "[0-9a-f]{48}" > hex-sym.txt
 
-    SYM_OLDHX=$(grep -oE ".{,8}${5}${4}${3}${1}.{,16}" hex-sym.txt)
+    SYM_OLDHX=$(grep -oE ".{,12}${3}${1}.{,16}" hex-sym.txt)
     if [ ${#SYM_OLDHX} -gt 2 ]; then
         SYM_PATCH=${SYM_OLDHX/$1/$2}
         echo "| SYM_OLDHX: $SYM_OLDHX"
@@ -324,10 +324,7 @@ while [ $i -lt "$S_CNT" ]; do
     echo "| S_OLD_ADDR: $S_OLD_ADDR"
     echo "| S_NEW_ADDR: $S_NEW_ADDR"
     echo "| SECTION_IDS_LE_HEXES[i]: ${SECTION_IDS_LE_HEXES[$i]}"
-    echo "|-> LOCAL | DEFAULT"
-    patch_symtab_and_dynamic_sections "$S_OLD_ADDR" "$S_NEW_ADDR" "${SECTION_IDS_LE_HEXES[$i]}" "00" "03" # LOCAL  DEFAULT
-    echo "|-> GLOBAL | HIDDEN"
-    patch_symtab_and_dynamic_sections "$S_OLD_ADDR" "$S_NEW_ADDR" "${SECTION_IDS_LE_HEXES[$i]}" "02" "12" # GLOBAL HIDDEN
+    patch_symtab_and_dynamic_sections "$S_OLD_ADDR" "$S_NEW_ADDR" "${SECTION_IDS_LE_HEXES[$i]}"
     i=$((i+1))
 done
 echo
